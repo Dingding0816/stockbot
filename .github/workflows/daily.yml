@@ -22,4 +22,4 @@ jobs:
       - name: Run script
         env:
           LINE_TOKEN: ${{ secrets.LINE_TOKEN }}
-        run: python run_daily_new_14.py
+        run: python run_daily_new_16.py
