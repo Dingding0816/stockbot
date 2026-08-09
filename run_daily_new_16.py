@@ -1,6 +1,3 @@
-print("目前工作目錄：", os.getcwd())
-print("push_count.json 是否存在：", os.path.isfile("push_count.json"))
-
 import finnhub
 import pandas as pd
 import numpy as np
@@ -11,6 +8,8 @@ import os
 import sys
 import time
 import json
+print("目前工作目錄：", os.getcwd())
+print("push_count.json 是否存在：", os.path.isfile("push_count.json"))
 
 # ============================================
 # 0. 進階版自動學習（B）
