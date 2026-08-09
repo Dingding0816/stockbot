@@ -519,14 +519,10 @@ msg = (
 print(msg)
 
 # ============================================
-# 23. 廣播 / Push 自動切換
+# 23. 永遠使用廣播（會扣額度）
 # ============================================
 
-followers = get_follower_count()
-if followers >= 2:
-    send_line_broadcast(msg)
-else:
-    send_line_push(LINE_USER_ID, msg)
+send_line_broadcast(msg)
 
 # ============================================
 # 24. 寫入 CSV
