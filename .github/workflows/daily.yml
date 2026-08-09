@@ -1,5 +1,8 @@
 name: Daily Push
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: "0 1 * * *"   # 台灣時間早上 9 點（GitHub 用 UTC）
