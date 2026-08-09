@@ -561,3 +561,12 @@ else:
 
 print("✔ 本次預估完成")
 
+# ============================================
+# 25. 將 push_count.json 寫回 GitHub（持久化）
+# ============================================
+
+os.system('git config user.email "actions@github.com"')
+os.system('git config user.name "GitHub Actions"')
+os.system('git add push_count.json')
+os.system('git commit -m "Update push_count.json" || echo "No changes to commit"')
+os.system('git push')
