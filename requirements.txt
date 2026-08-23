@@ -1,7 +1,7 @@
-requests==2.34.0
-pandas==2.2.2
+fastapi
+uvicorn
+pandas
 numpy
-finnhub-python==2.4.29
-holidays==0.101
+requests
 pytz
-
+finnhub-python
