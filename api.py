@@ -34,3 +34,30 @@ def mu_predict():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+from fastapi import Request
+from linebot import LineBotApi, WebhookParser
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+
+# 你的 LINE Channel Access Token & Secret
+line_bot_api = LineBotApi("VK2OUm7lcUnjgIhnLElhzimTFuUOyWQ80XaaNVDpDPLOkbTtWxN9wjos8qcSQq9u64BNAY3ktCy4KvdoXZoMHPZUXAOeHLhkDMhOyw+kehYL4G7J7ALBeoi8DOsUL2seKahQttVSupNgeORM28AtXwdB04t89/1O/w1cDnyilFU=")
+parser = WebhookParser("cdc8af606209cd1485a292ca8a9cc7f0")
+
+@app.post("/callback")
+async def callback(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Line-Signature")
+
+    try:
+        events = parser.parse(body.decode("utf-8"), signature)
+    except Exception as e:
+        print("Signature error:", e)
+        return "OK"
+
+    for event in events:
+        if isinstance(event, MessageEvent) and isinstance(event.message, TextMessage):
+            user_msg = event.message.text
+            reply = f"你說：{user_msg}"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+
+    return "OK"
