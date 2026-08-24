@@ -313,53 +313,88 @@ def run_prediction(return_dict=False):
         df["datetime"] = df["t"].apply(lambda x: datetime.fromtimestamp(x))
         df = df.sort_values("datetime").reset_index(drop=True)
         return df
+
     # ============================================
-    # 14.3 K 線合理性檢查（加在這裡）
+    # 14.3 K 線合理性檢查（最終穩定版）
     # ============================================
+
     def is_valid_kline(df):
         if df is None or df.empty:
             return False
 
+        # 價格不能為 0 或負
         if (df["c"] <= 0).any():
             return False
 
         price = df["c"].iloc[-1]
+
+        # 高低差不能超過 10%
         if (df["h"] - df["l"]).iloc[-1] > price * 0.10:
             return False
 
+        # 異常跳價（超過 ±10%）
+        ret_1m = df["c"].pct_change().iloc[-1]
+        if abs(ret_1m) > 0.10:
+            return False
+
+        # 高低價不能離目前價格太遠（避免前一天資料混入）
+        if abs(df["h"].iloc[-1] - price) > price * 0.10:
+            return False
+        if abs(df["l"].iloc[-1] - price) > price * 0.10:
+            return False
+
         return True
-    
+
     k_df = get_1m_klines()
+
+    # ============================================
+    # 14.4 短週期特徵（最終穩定版）
+    # ============================================
+
     def compute_short_features(df):
         df = df.copy()
 
-        # ============================
-        # 1. 報酬率（短週期方向）
-        # ============================
-        df["ret_1m"] = df["c"].pct_change().clip(-0.05, 0.05)     # 限制 ±5%
-        df["ret_3m"] = df["c"].pct_change(3).clip(-0.10, 0.10)    # 限制 ±10%
-        df["ret_5m"] = df["c"].pct_change(5).clip(-0.15, 0.15)    # 限制 ±15%
+        # 報酬率限制（避免爆衝）
+        df["ret_1m"] = df["c"].pct_change().clip(-0.05, 0.05)
+        df["ret_3m"] = df["c"].pct_change(3).clip(-0.10, 0.10)
+        df["ret_5m"] = df["c"].pct_change(5).clip(-0.15, 0.15)
 
-        # ============================
-        # 2. ATR（短週期波動）
-        # ============================
+        # ATR 過濾（避免高低點異常）
         raw_atr = df["h"] - df["l"]
-
-        # ATR 過濾：高低差超過 5% → 視為異常，改用 2%
-        df["atr_1m"] = raw_atr.where(
-            raw_atr < df["c"] * 0.05,
-            df["c"] * 0.02
-        )
-
+        df["atr_1m"] = raw_atr.where(raw_atr < df["c"] * 0.05, df["c"] * 0.02)
         df["atr_5m"] = df["atr_1m"].rolling(5).mean()
 
-        # ============================
-        # 3. Volume（Finnhub 無 volume → 用 0）
-        # ============================
+        # Finnhub 無 volume → 用 0
         df["vol_1m"] = 0
         df["vol_5m"] = 0
 
         return df
+
+    # ============================================
+    # 14.4 使用短週期特徵（最終穩定版）
+    # ============================================
+
+    df_1m = get_1m_klines()
+
+    if is_valid_kline(df_1m):
+        df_1m = compute_short_features(df_1m)
+        last = df_1m.iloc[-1]
+
+        ret_1m = safe_value(last["ret_1m"], 0)
+        ret_3m = safe_value(last["ret_3m"], 0)
+        ret_5m = safe_value(last["ret_5m"], 0)
+
+        atr_1m = safe_value(last["atr_1m"], 0)
+        atr_5m = safe_value(last["atr_5m"], 0)
+
+        vol_1m = safe_value(last["vol_1m"], 0)
+        vol_5m = safe_value(last["vol_5m"], 0)
+
+    else:
+        ret_1m = ret_3m = ret_5m = 0
+        atr_1m = atr_5m = 0
+        vol_1m = vol_5m = 0
+
       # ============================================
     # 10. MU 即時成交價（盤中 / 盤後 / 盤前）
     # ============================================
@@ -472,32 +507,6 @@ def run_prediction(return_dict=False):
         best_sell_5m = true_high * 0.998  # 下調 0.2%
 
         return best_buy_5m, best_sell_5m
-
-    # ============================================
-    # 14.4 短週期特徵（1m / 3m / 5m）
-    # ============================================
-
-    df_1m = get_1m_klines()
-
-    if is_valid_kline(df_1m):
-        df_1m = compute_short_features(df_1m)
-        last = df_1m.iloc[-1]
-
-        ret_1m = safe_value(last["ret_1m"], 0)
-        ret_3m = safe_value(last["ret_3m"], 0)
-        ret_5m = safe_value(last["ret_5m"], 0)
-
-        atr_1m = safe_value(last["atr_1m"], 0)
-        atr_5m = safe_value(last["atr_5m"], 0)
-
-        vol_1m = safe_value(last["vol_1m"], 0)
-        vol_5m = safe_value(last["vol_5m"], 0)
-
-    else:
-        # 資料不合理 → 不使用短週期特徵
-        ret_1m = ret_3m = ret_5m = 0
-        atr_1m = atr_5m = 0
-        vol_1m = vol_5m = 0
 
     # ============================================
     # 15. 30 分鐘三因子
