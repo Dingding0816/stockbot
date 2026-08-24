@@ -644,6 +644,12 @@ def run_prediction(return_dict=False):
         ),
         current_price
     )
+    # 永不反轉（最終穩定版）
+    true_low_full  = min(est_low_full_day, est_high_full_day)
+    true_high_full = max(est_low_full_day, est_high_full_day)
+
+    true_low15  = min(est_low15, est_high15)
+    true_high15 = max(est_low15, est_high15)
 
     # ============================================
     # 19. 實際結果
@@ -674,10 +680,10 @@ def run_prediction(return_dict=False):
     msg = (
         f"【MU 預估系統】\n"
         f"版本時間：{version_time}\n\n"
-        f"整天預估最高價：{round(est_high_full_day,2)}\n"
-        f"整天預估最低價：{round(est_low_full_day,2)}\n\n"
-        f"未來15分鐘預估最高價：{round(est_high15,2)}\n"
-        f"未來15分鐘預估最低價：{round(est_low15,2)}\n\n"
+        f"整天預估最高價：{round(true_high_full,2)}\n"
+        f"整天預估最低價：{round(true_low_full,2)}\n\n"
+        f"未來15分鐘預估最高價：{round(true_high15,2)}\n"
+        f"未來15分鐘預估最低價：{round(true_low15,2)}\n\n"
         f"--- 五分鐘建議價位 ---\n"
         f"未來5分鐘最佳買入價格：{round(best_buy_5m_adjusted, 2)}（已調整 +{extra_spread_pct:.2f}%）\n"
         f"未來5分鐘最佳賣出價格：{round(best_sell_5m_adjusted, 2)}（已調整 +{extra_spread_pct:.2f}%）\n"        
