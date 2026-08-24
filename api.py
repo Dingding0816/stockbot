@@ -27,29 +27,171 @@ app.add_middleware(
 def mu_predict():
     return run_prediction(return_dict=True)
     
-@app.get("/")
+from fastapi.responses import HTMLResponse
+
+@app.get("/", response_class=HTMLResponse)
 def home():
     result = run_prediction(return_dict=True)
 
-    # 四捨五入到小數點後一位
     def r(x):
         return round(x, 1) if isinstance(x, (int, float)) else x
 
-    text = (
-        "📊 MU Prediction Dashboard\n"
-        f"目前價格：{r(result.get('current_price'))}\n"
-        f"未來5分鐘最佳買入價：{r(result.get('best_buy_5m'))}\n"
-        f"未來5分鐘最佳賣出價格：{r(result.get('best_sell_5m'))}\n"
-        f"未來15分鐘預估最高價：{r(result.get('est_high15'))}\n"
-        f"未來15分鐘預估最低價：{r(result.get('est_low15'))}\n"
-        f"全日預估最高價：{r(result.get('est_high_full_day'))}\n"
-        f"全日預估最低價：{r(result.get('est_low_full_day'))}\n"
-        f"預估分數(predicted_score)：{r(result.get('predicted_score'))}\n"
-        f"實際結果(actual_result)：{r(result.get('actual_result'))}\n"
-        f"時間：{result.get('timestamp')}"
-    )
+    current_price = r(result.get("current_price"))
+    best_buy_5m = r(result.get("best_buy_5m"))
+    best_sell_5m = r(result.get("best_sell_5m"))
+    est_high15 = r(result.get("est_high15"))
+    est_low15 = r(result.get("est_low15"))
+    est_high_full_day = r(result.get("est_high_full_day"))
+    est_low_full_day = r(result.get("est_low_full_day"))
+    score = r(result.get("predicted_score"))
+    actual = r(result.get("actual_result"))
+    ts = result.get("timestamp")
 
-    return text
+    direction_text = "持平"
+    direction_color = "#cccccc"
+    if score > 0:
+        direction_text = "上漲 📈"
+        direction_color = "#4caf50"
+    elif score < 0:
+        direction_text = "下跌 📉"
+        direction_color = "#f44336"
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>MU Prediction Dashboard</title>
+        <style>
+            body {{
+                margin: 0;
+                padding: 0;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                background: #0b1120;
+                color: #e5e7eb;
+            }}
+            .container {{
+                max-width: 960px;
+                margin: 0 auto;
+                padding: 16px;
+            }}
+            .title {{
+                font-size: 1.8rem;
+                font-weight: 700;
+                margin-bottom: 8px;
+            }}
+            .subtitle {{
+                font-size: 0.95rem;
+                color: #9ca3af;
+                margin-bottom: 16px;
+            }}
+            .grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                gap: 12px;
+            }}
+            .card {{
+                background: #111827;
+                border-radius: 12px;
+                padding: 14px 16px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+                border: 1px solid #1f2937;
+            }}
+            .card-title {{
+                font-size: 0.95rem;
+                color: #9ca3af;
+                margin-bottom: 6px;
+            }}
+            .card-value {{
+                font-size: 1.4rem;
+                font-weight: 600;
+            }}
+            .direction {{
+                color: {direction_color};
+            }}
+            .footer {{
+                margin-top: 18px;
+                font-size: 0.85rem;
+                color: #6b7280;
+                text-align: right;
+            }}
+            @media (max-width: 600px) {{
+                .title {{
+                    font-size: 1.5rem;
+                }}
+                .card-value {{
+                    font-size: 1.3rem;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="title">MU Prediction Dashboard</div>
+            <div class="subtitle">深色金融風 · 卡片儀表板 · 手機優化</div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">目前價格</div>
+                    <div class="card-value">{current_price}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">預估方向</div>
+                    <div class="card-value direction">{direction_text}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">5 分鐘最佳買入價</div>
+                    <div class="card-value">{best_buy_5m}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">5 分鐘最佳賣出價</div>
+                    <div class="card-value">{best_sell_5m}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">15 分鐘最高價</div>
+                    <div class="card-value">{est_high15}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">15 分鐘最低價</div>
+                    <div class="card-value">{est_low15}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">全日預估最高價</div>
+                    <div class="card-value">{est_high_full_day}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">全日預估最低價</div>
+                    <div class="card-value">{est_low_full_day}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">預估分數 (score)</div>
+                    <div class="card-value">{score}</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">實際結果 (actual)</div>
+                    <div class="card-value">{actual}</div>
+                </div>
+            </div>
+
+            <div class="footer">
+                更新時間：{ts}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    return HTMLResponse(content=html)
 
 @app.get("/health")
 def health_check():
