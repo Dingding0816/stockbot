@@ -333,11 +333,9 @@ def run_prediction(return_dict=False):
         # 5m ATR
         df["atr_5m"] = df["atr_1m"].rolling(5).mean()
 
-        # 1m volume
-        df["vol_1m"] = df["v"]
-
-        # 5m volume
-        df["vol_5m"] = df["v"].rolling(5).sum()
+        # Finnhub 1m K 線沒有 volume → 用 0
+        df["vol_1m"] = 0
+        df["vol_5m"] = 0
 
         return df
 
