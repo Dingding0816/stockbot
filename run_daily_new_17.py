@@ -500,7 +500,9 @@ def run_prediction(return_dict=False):
             volume_factor * 0.1 +
             market_bias * 0.1
         )
-
+        # 把五分鐘預估變動幅度限制在 ±3%
+        price_change_est = max(min(price_change_est, 0.03), -0.03)
+  
         # 6. 五分鐘高低點預估
         est_high_5m = current_price * (1 + price_change_est)
         est_low_5m  = current_price * (1 - price_change_est)
@@ -708,12 +710,26 @@ def run_prediction(return_dict=False):
     if return_dict:
         return {
             "current_price": current_price,
-            "est_high_full_day": est_high_full_day,
-            "est_low_full_day": est_low_full_day,
-            "est_high15": est_high15,
-            "est_low15": est_low15,
+
+            # 5 分鐘（已調整）
             "best_buy_5m": best_buy_5m_adjusted,
             "best_sell_5m": best_sell_5m_adjusted,
+
+            # 15 分鐘（永不反轉後）
+            "true_high15": true_high15,
+            "true_low15": true_low15,
+
+            # 整日（永不反轉後）
+            "true_high_full": true_high_full,
+            "true_low_full": true_low_full,
+
+            # 原始值（你要保留也可以）
+            "est_high15": est_high15,
+            "est_low15": est_low15,
+            "est_high_full_day": est_high_full_day,
+            "est_low_full_day": est_low_full_day,
+
+            # 其他
             "extra_spread_pct": extra_spread_pct,
             "predicted_score": predicted_score,
             "actual_result": actual_result,
