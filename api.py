@@ -35,20 +35,21 @@ def home():
     def r(x):
         return round(x, 1) if isinstance(x, (int, float)) else x
 
-    return {
-        "message": "MU Prediction Dashboard",
-        "current_price": r(result.get("current_price")),
-        "未來5分鐘最佳買入價": r(result.get("best_buy_5m")),
-        "未來5分鐘最佳賣出價格": r(result.get("best_sell_5m")),
-        "未來15分鐘預估最高價": r(result.get("est_high15")),
-        "未來15分鐘預估最低價": r(result.get("est_low15")),
-        "全日預估最高價": r(result.get("est_high_full_day")),
-        "全日預估最低價": r(result.get("est_low_full_day")),
-        "預估分數(predicted_score)": r(result.get("predicted_score")),
-        "實際結果(actual_result)": r(result.get("actual_result")),
-        "timestamp": result.get("timestamp")
-    }
+    text = (
+        "📊 MU Prediction Dashboard\n"
+        f"目前價格：{r(result.get('current_price'))}\n"
+        f"未來5分鐘最佳買入價：{r(result.get('best_buy_5m'))}\n"
+        f"未來5分鐘最佳賣出價格：{r(result.get('best_sell_5m'))}\n"
+        f"未來15分鐘預估最高價：{r(result.get('est_high15'))}\n"
+        f"未來15分鐘預估最低價：{r(result.get('est_low15'))}\n"
+        f"全日預估最高價：{r(result.get('est_high_full_day'))}\n"
+        f"全日預估最低價：{r(result.get('est_low_full_day'))}\n"
+        f"預估分數(predicted_score)：{r(result.get('predicted_score'))}\n"
+        f"實際結果(actual_result)：{r(result.get('actual_result'))}\n"
+        f"時間：{result.get('timestamp')}"
+    )
 
+    return text
 
 @app.get("/health")
 def health_check():
