@@ -313,7 +313,22 @@ def run_prediction(return_dict=False):
         df["datetime"] = df["t"].apply(lambda x: datetime.fromtimestamp(x))
         df = df.sort_values("datetime").reset_index(drop=True)
         return df
+    # ============================================
+    # 14.3 K 線合理性檢查（加在這裡）
+    # ============================================
+    def is_valid_kline(df):
+        if df is None or df.empty:
+            return False
 
+        if (df["c"] <= 0).any():
+            return False
+
+        price = df["c"].iloc[-1]
+        if (df["h"] - df["l"]).iloc[-1] > price * 0.10:
+            return False
+
+        return True
+    
     k_df = get_1m_klines()
     def compute_short_features(df):
         df = df.copy()
@@ -463,7 +478,8 @@ def run_prediction(return_dict=False):
     # ============================================
 
     df_1m = get_1m_klines()
-    if df_1m is not None and not df_1m.empty:
+
+    if is_valid_kline(df_1m):
         df_1m = compute_short_features(df_1m)
         last = df_1m.iloc[-1]
 
@@ -478,6 +494,7 @@ def run_prediction(return_dict=False):
         vol_5m = safe_value(last["vol_5m"], 0)
 
     else:
+        # 資料不合理 → 不使用短週期特徵
         ret_1m = ret_3m = ret_5m = 0
         atr_1m = atr_5m = 0
         vol_1m = vol_5m = 0
