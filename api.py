@@ -50,8 +50,26 @@ async def callback(request: Request):
 
     for event in events:
         if isinstance(event, MessageEvent) and isinstance(event.message, TextMessage):
-            user_msg = event.message.text
-            reply = f"你說：{user_msg}"
+            text = event.message.text.strip().lower()
+
+            # ===== run 指令 =====
+            if text == "run":
+                try:
+                    result = run_prediction(return_dict=True)
+                    msg = (
+                        f"📈 MU 預估結果\n"
+                        f"預估方向: {result['direction']}\n"
+                        f"預估漲跌: {result['change']}%\n"
+                        f"信心度: {result['confidence']}"
+                    )
+                except Exception as e:
+                    msg = f"❌ 執行 run 時發生錯誤: {e}"
+
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+                continue
+
+            # ===== 其他訊息 =====
+            reply = f"你說：{text}"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
     return "OK"
