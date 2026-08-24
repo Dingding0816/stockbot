@@ -75,32 +75,40 @@ async def callback(request: Request):
         if isinstance(event, MessageEvent) and isinstance(event.message, TextMessage):
             text = event.message.text.strip().lower()
 
-           # ===== run 指令 =====
+            # ===== run 指令 =====
             if text == "run":
                 try:
                     result = run_prediction(return_dict=True)
 
-                   # 自動判斷方向（用 predicted_score）
+                    # 四捨五入到小數點後一位
+                    def r(x):
+                        return round(x, 1) if isinstance(x, (int, float)) else x
+
+                    # 自動判斷方向（用 predicted_score）
                     score = result.get("predicted_score", 0)
                     if score > 0:
-                      direction = "上漲 📈"
+                        direction = "上漲 📈"
                     elif score < 0:
-                      direction = "下跌 📉"
+                        direction = "下跌 📉"
                     else:
-                      direction = "持平"
+                        direction = "持平"
 
                     msg = (
-                        f"📈 MU 預估結果\n"
-                        f"預估方向: {direction}\n"
-                        f"未來5分鐘最佳買入價: {result.get('best_buy_5m')}\n"
-                        f"未來5分鐘最佳賣出價: {result.get('best_sell_5m')}\n"
-                        f"未來15分鐘最高價: {result.get('est_high15')}\n"
-                        f"未來15分鐘最低價: {result.get('est_low15')}\n"
-                        f"預估分數: {score}\n"
-                        f"實際結果: {result.get('actual_result')}\n"
+                        f"📊 MU 預估結果\n"
+                        f"方向：{direction}\n"
+                        f"5 分鐘最佳買入價：{r(result.get('best_buy_5m'))}\n"
+                        f"5 分鐘最佳賣出價：{r(result.get('best_sell_5m'))}\n"
+                        f"15 分鐘最高價：{r(result.get('est_high15'))}\n"
+                        f"15 分鐘最低價：{r(result.get('est_low15'))}\n"
+                        f"全日預估最高價：{r(result.get('est_high_full_day'))}\n"
+                        f"全日預估最低價：{r(result.get('est_low_full_day'))}\n"
+                        f"預估分數：{r(score)}\n"
+                        f"實際結果：{r(result.get('actual_result'))}\n"
+                        f"時間：{result.get('timestamp')}"
                     )
+
                 except Exception as e:
-                    msg = f"❌ 執行 run 時發生錯誤: {e}"
+                    msg = f"❌ 執行 run 時發生錯誤：{e}"
 
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
                 continue
