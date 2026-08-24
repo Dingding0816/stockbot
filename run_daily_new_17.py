@@ -755,10 +755,10 @@ def run_prediction(return_dict=False):
     row = [
         today,
         version_time_csv,
-        round(est_high_full_day, 2),
-        round(est_low_full_day, 2),
-        round(est_high15, 2),
-        round(est_low15, 2)
+        round(true_high_full, 2),
+        round(true_low_full, 2),
+        round(true_high15, 2),
+        round(true_low15, 2)
     ]
 
     file_exists = os.path.isfile(forecast_csv_path)
