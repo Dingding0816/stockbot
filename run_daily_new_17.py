@@ -322,31 +322,32 @@ def run_prediction(return_dict=False):
         if df is None or df.empty:
             return False
 
+        # 最新一根 K 線
+        h = df["h"].iloc[-1]
+        l = df["l"].iloc[-1]
+        c = df["c"].iloc[-1]
+        o = df["o"].iloc[-1]
+
         # 價格不能為 0 或負
-        if (df["c"] <= 0).any():
+        if c <= 0 or h <= 0 or l <= 0 or o <= 0:
             return False
 
-        price = df["c"].iloc[-1]
-
-        # 高低差不能超過 5%（更嚴格）
-        if (df["h"] - df["l"]).iloc[-1] > price * 0.05:
+        # 價格不能離目前價格太遠（避免前一天資料）
+        # 例如：目前 896，但 K 線回傳 h=2000 或 l=20
+        if h > c * 1.02 or l < c * 0.98:
             return False
 
-        # 異常跳價（超過 ±5%）
+        # 高低差不能超過 2%
+        if (h - l) > c * 0.02:
+            return False
+
+        # 異常跳價（超過 ±2%）
         ret_1m = df["c"].pct_change().iloc[-1]
-        if abs(ret_1m) > 0.05:
+        if abs(ret_1m) > 0.02:
             return False
 
-        # 高低價不能離目前價格太遠（避免前一天資料混入）
-        if abs(df["h"].iloc[-1] - price) > price * 0.05:
-            return False
-        if abs(df["l"].iloc[-1] - price) > price * 0.05:
-            return False
-
-        # 避免盤後回傳極端值（例如 0、2000）
-        if df["h"].iloc[-1] > price * 1.05:
-            return False
-        if df["l"].iloc[-1] < price * 0.95:
+        # 開盤價不能離收盤太遠（避免盤後怪資料）
+        if abs(o - c) > c * 0.02:
             return False
 
         return True
