@@ -26,6 +26,18 @@ app.add_middleware(
 @app.get("/mu/predict")
 def mu_predict():
     return run_prediction(return_dict=True)
+    
+@app.get("/")
+def home():
+    result = run_prediction(return_dict=True)
+
+    return {
+        "message": "MU Prediction Dashboard",
+        "未來五分鐘最佳買入價格": result.get("best_buy_5min"),
+        "未來五分鐘最佳賣出價格": result.get("best_sell_5min"),
+        "未來15分鐘預估最高價": result.get("max_15min"),
+        "未來15分鐘預估最低價": result.get("min_15min")
+    }
 
 @app.get("/health")
 def health_check():
