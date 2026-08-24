@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from run_daily_new_17 import run_prediction
 
 from linebot import LineBotApi, WebhookParser
@@ -26,8 +27,6 @@ app.add_middleware(
 @app.get("/mu/predict")
 def mu_predict():
     return run_prediction(return_dict=True)
-    
-from fastapi.responses import HTMLResponse
 
 @app.get("/", response_class=HTMLResponse)
 def home():
@@ -36,13 +35,17 @@ def home():
     def r(x):
         return round(x, 1) if isinstance(x, (int, float)) else x
 
+    # 取修正後的值（true_xxx）
     current_price = r(result.get("current_price"))
     best_buy_5m = r(result.get("best_buy_5m"))
     best_sell_5m = r(result.get("best_sell_5m"))
-    est_high15 = r(result.get("est_high15"))
-    est_low15 = r(result.get("est_low15"))
-    est_high_full_day = r(result.get("est_high_full_day"))
-    est_low_full_day = r(result.get("est_low_full_day"))
+
+    est_high15 = r(result.get("true_high15"))
+    est_low15 = r(result.get("true_low15"))
+
+    est_high_full_day = r(result.get("true_high_full"))
+    est_low_full_day = r(result.get("true_low_full"))
+
     score = r(result.get("predicted_score"))
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp")
@@ -115,14 +118,6 @@ def home():
                 font-size: 0.85rem;
                 color: #6b7280;
                 text-align: right;
-            }}
-            @media (max-width: 600px) {{
-                .title {{
-                    font-size: 1.5rem;
-                }}
-                .card-value {{
-                    font-size: 1.3rem;
-                }}
             }}
         </style>
     </head>
@@ -200,8 +195,8 @@ def health_check():
 # -----------------------------
 # LINE Webhook
 # -----------------------------
-line_bot_api = LineBotApi("VK2OUm7lcUnjgIhnLElhzimTFuUOyWQ80XaaNVDpDPLOkbTtWxN9wjos8qcSQq9u64BNAY3ktCy4KvdoXZoMHPZUXAOeHLhkDMhOyw+kehYL4G7J7ALBeoi8DOsUL2seKahQttVSupNgeORM28AtXwdB04t89/1O/w1cDnyilFU=")
-parser = WebhookParser("cdc8af606209cd1485a292ca8a9cc7f0")
+line_bot_api = LineBotApi("YOUR_LINE_TOKEN")
+parser = WebhookParser("YOUR_LINE_SECRET")
 
 @app.post("/callback")
 async def callback(request: Request):
@@ -218,16 +213,13 @@ async def callback(request: Request):
         if isinstance(event, MessageEvent) and isinstance(event.message, TextMessage):
             text = event.message.text.strip().lower()
 
-            # ===== run 指令 =====
             if text == "run":
                 try:
                     result = run_prediction(return_dict=True)
 
-                    # 四捨五入到小數點後一位
                     def r(x):
                         return round(x, 1) if isinstance(x, (int, float)) else x
 
-                    # 自動判斷方向（用 predicted_score）
                     score = result.get("predicted_score", 0)
                     if score > 0:
                         direction = "上漲 📈"
@@ -241,10 +233,10 @@ async def callback(request: Request):
                         f"方向：{direction}\n"
                         f"5 分鐘最佳買入價：{r(result.get('best_buy_5m'))}\n"
                         f"5 分鐘最佳賣出價：{r(result.get('best_sell_5m'))}\n"
-                        f"15 分鐘最高價：{r(result.get('est_high15'))}\n"
-                        f"15 分鐘最低價：{r(result.get('est_low15'))}\n"
-                        f"全日預估最高價：{r(result.get('est_high_full_day'))}\n"
-                        f"全日預估最低價：{r(result.get('est_low_full_day'))}\n"
+                        f"15 分鐘最高價：{r(result.get('true_high15'))}\n"
+                        f"15 分鐘最低價：{r(result.get('true_low15'))}\n"
+                        f"全日預估最高價：{r(result.get('true_high_full'))}\n"
+                        f"全日預估最低價：{r(result.get('true_low_full'))}\n"
                         f"預估分數：{r(score)}\n"
                         f"實際結果：{r(result.get('actual_result'))}\n"
                         f"時間：{result.get('timestamp')}"
@@ -256,7 +248,6 @@ async def callback(request: Request):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
                 continue
 
-            # ===== 其他訊息 =====
             reply = f"你說：{text}"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
