@@ -318,27 +318,33 @@ def run_prediction(return_dict=False):
     def compute_short_features(df):
         df = df.copy()
 
-        # 1m return
-        df["ret_1m"] = df["c"].pct_change()
+        # ============================
+        # 1. 報酬率（短週期方向）
+        # ============================
+        df["ret_1m"] = df["c"].pct_change().clip(-0.05, 0.05)     # 限制 ±5%
+        df["ret_3m"] = df["c"].pct_change(3).clip(-0.10, 0.10)    # 限制 ±10%
+        df["ret_5m"] = df["c"].pct_change(5).clip(-0.15, 0.15)    # 限制 ±15%
 
-        # 3m return
-        df["ret_3m"] = df["c"].pct_change(3)
+        # ============================
+        # 2. ATR（短週期波動）
+        # ============================
+        raw_atr = df["h"] - df["l"]
 
-        # 5m return
-        df["ret_5m"] = df["c"].pct_change(5)
+        # ATR 過濾：高低差超過 5% → 視為異常，改用 2%
+        df["atr_1m"] = raw_atr.where(
+            raw_atr < df["c"] * 0.05,
+            df["c"] * 0.02
+        )
 
-        # 1m ATR
-        df["atr_1m"] = df["h"] - df["l"]
-
-        # 5m ATR
         df["atr_5m"] = df["atr_1m"].rolling(5).mean()
 
-        # Finnhub 1m K 線沒有 volume → 用 0
+        # ============================
+        # 3. Volume（Finnhub 無 volume → 用 0）
+        # ============================
         df["vol_1m"] = 0
         df["vol_5m"] = 0
 
         return df
-
       # ============================================
     # 10. MU 即時成交價（盤中 / 盤後 / 盤前）
     # ============================================
