@@ -315,6 +315,31 @@ def run_prediction(return_dict=False):
         return df
 
     k_df = get_1m_klines()
+    def compute_short_features(df):
+        df = df.copy()
+
+        # 1m return
+        df["ret_1m"] = df["c"].pct_change()
+
+        # 3m return
+        df["ret_3m"] = df["c"].pct_change(3)
+
+        # 5m return
+        df["ret_5m"] = df["c"].pct_change(5)
+
+        # 1m ATR
+        df["atr_1m"] = df["h"] - df["l"]
+
+        # 5m ATR
+        df["atr_5m"] = df["atr_1m"].rolling(5).mean()
+
+        # 1m volume
+        df["vol_1m"] = df["v"]
+
+        # 5m volume
+        df["vol_5m"] = df["v"].rolling(5).sum()
+
+        return df
 
       # ============================================
     # 10. MU 即時成交價（盤中 / 盤後 / 盤前）
@@ -374,64 +399,84 @@ def run_prediction(return_dict=False):
     # 14.5  五分鐘最佳買入 / 賣出價格
     # ============================================
 
-    def compute_5m_signals(current_price, k_df, semi_return, futures_return, atr_factor, return_30m, vol_30m_factor, direction_30m):
+    def compute_5m_signals(
+        current_price,
+        ret_1m, ret_3m, ret_5m,
+        atr_1m, atr_5m,
+        vol_1m, vol_5m,
+        semi_return, futures_return
+    ):
 
-        # -----------------------------
-        # 1. 基準價：用最近 5 根 K 線的平均收盤價
-        # -----------------------------
-        if k_df is None or len(k_df) < 5:
-            base = current_price
-        else:
-            last5 = k_df.iloc[-5:]
-            base = safe_value(last5["c"].mean(), current_price)
+        # 1. 短週期方向（最重要）
+        short_direction = (
+            ret_1m * 0.50 +
+            ret_3m * 0.30 +
+            ret_5m * 0.20
+        )
 
-        # -----------------------------
-        # 2. 計算短期波動（5 分鐘高低差）
-        # -----------------------------
-        if k_df is None or len(k_df) < 5:
-            short_vol = atr_factor * 0.5  # fallback
-        else:
-            high_5m = safe_value(last5["h"].max(), current_price)
-            low_5m = safe_value(last5["l"].min(), current_price)
-            short_vol = (high_5m - low_5m) / base
+        # 2. 短週期波動（ATR）
+        short_volatility = (
+            atr_1m * 0.6 +
+            atr_5m * 0.4
+        )
 
-        # -----------------------------
-        # 3. 加入市場方向（半導體 + 期貨）
-        # -----------------------------
-        market_bias = (semi_return * 0.4) + (futures_return * 0.4)
+        # 3. 短週期成交量（量能強弱）
+        volume_factor = (
+            vol_1m * 0.4 +
+            vol_5m * 0.6
+        )
 
-        # -----------------------------
-        # 4. 加入 30 分鐘方向（更平滑）
-        # -----------------------------
-        trend_bias = direction_30m * 0.3
+        # 4. 市場方向（半導體 + 期貨）
+        market_bias = (
+            semi_return * 0.4 +
+            futures_return * 0.4
+        )
 
-        # -----------------------------
-        # 5. 最終 5 分鐘預估上下界
-        # -----------------------------
-        est_high_5m = base * (1 + short_vol * 0.6 + market_bias + trend_bias)
-        est_low_5m  = base * (1 - short_vol * 0.6 + market_bias + trend_bias)
+        # 5. 綜合短週期預估（核心公式）
+        price_change_est = (
+            short_direction * 0.6 +
+            short_volatility * 0.2 +
+            volume_factor * 0.1 +
+            market_bias * 0.1
+        )
 
-        # -----------------------------
-        # 6. 永不反轉：強制高低點排序
-        # -----------------------------
+        # 6. 五分鐘高低點預估
+        est_high_5m = current_price * (1 + price_change_est)
+        est_low_5m  = current_price * (1 - price_change_est)
+
+        # 7. 永不反轉
         true_low = min(est_low_5m, est_high_5m)
         true_high = max(est_low_5m, est_high_5m)
 
-        # -----------------------------
-        # 7. 建議價位（永遠：買入 < 賣出）
-        # -----------------------------
-        raw_buy  = true_low * 1.005   # 上調 0.5%
-        raw_sell = true_high * 0.995  # 下調 0.5%
-
-        # 若仍反轉 → 強制修正
-        if raw_buy >= raw_sell:
-            best_buy_5m  = true_low
-            best_sell_5m = true_high
-        else:
-            best_buy_5m  = raw_buy
-            best_sell_5m = raw_sell
+        # 8. 建議價位
+        best_buy_5m  = true_low * 1.002   # 上調 0.2%
+        best_sell_5m = true_high * 0.998  # 下調 0.2%
 
         return best_buy_5m, best_sell_5m
+
+    # ============================================
+    # 14.4 短週期特徵（1m / 3m / 5m）
+    # ============================================
+
+    df_1m = get_1m_klines()
+    if df_1m is not None and not df_1m.empty:
+        df_1m = compute_short_features(df_1m)
+        last = df_1m.iloc[-1]
+
+        ret_1m = safe_value(last["ret_1m"], 0)
+        ret_3m = safe_value(last["ret_3m"], 0)
+        ret_5m = safe_value(last["ret_5m"], 0)
+
+        atr_1m = safe_value(last["atr_1m"], 0)
+        atr_5m = safe_value(last["atr_5m"], 0)
+
+        vol_1m = safe_value(last["vol_1m"], 0)
+        vol_5m = safe_value(last["vol_5m"], 0)
+
+    else:
+        ret_1m = ret_3m = ret_5m = 0
+        atr_1m = atr_5m = 0
+        vol_1m = vol_5m = 0
 
     # ============================================
     # 15. 30 分鐘三因子
@@ -456,13 +501,10 @@ def run_prediction(return_dict=False):
     # 14.6 計算五分鐘最佳買入 / 賣出價格
     best_buy_5m, best_sell_5m = compute_5m_signals(
         current_price,
-        k_df,
-        semi_return,
-        futures_return,
-        atr_factor,
-        return_30m,
-        vol_30m_factor,
-        direction_30m
+        ret_1m, ret_3m, ret_5m,
+        atr_1m, atr_5m,
+        vol_1m, vol_5m,
+        semi_return, futures_return
     )
 
     # ============================
@@ -674,6 +716,3 @@ def run_prediction(return_dict=False):
 
     if __name__ == "__main__":
         pass
-
-
-
