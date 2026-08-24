@@ -328,19 +328,25 @@ def run_prediction(return_dict=False):
 
         price = df["c"].iloc[-1]
 
-        # 高低差不能超過 10%
-        if (df["h"] - df["l"]).iloc[-1] > price * 0.10:
+        # 高低差不能超過 5%（更嚴格）
+        if (df["h"] - df["l"]).iloc[-1] > price * 0.05:
             return False
 
-        # 異常跳價（超過 ±10%）
+        # 異常跳價（超過 ±5%）
         ret_1m = df["c"].pct_change().iloc[-1]
-        if abs(ret_1m) > 0.10:
+        if abs(ret_1m) > 0.05:
             return False
 
         # 高低價不能離目前價格太遠（避免前一天資料混入）
-        if abs(df["h"].iloc[-1] - price) > price * 0.10:
+        if abs(df["h"].iloc[-1] - price) > price * 0.05:
             return False
-        if abs(df["l"].iloc[-1] - price) > price * 0.10:
+        if abs(df["l"].iloc[-1] - price) > price * 0.05:
+            return False
+
+        # 避免盤後回傳極端值（例如 0、2000）
+        if df["h"].iloc[-1] > price * 1.05:
+            return False
+        if df["l"].iloc[-1] < price * 0.95:
             return False
 
         return True
