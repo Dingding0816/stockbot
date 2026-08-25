@@ -132,6 +132,10 @@ def dashboard(symbol: str):
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- ⭐ 自動每分鐘更新 -->
+    <meta http-equiv="refresh" content="60">
+
     <title>{symbol} Prediction Dashboard</title>
 
     <style>
@@ -143,22 +147,34 @@ def dashboard(symbol: str):
             color: #e5e7eb;
         }}
 
+        /* 回主頁按鈕 */
+        .home-btn {{
+            display:inline-block;
+            padding:10px 18px;
+            background:#1f2937;
+            color:#93c5fd;
+            border-radius:8px;
+            text-decoration:none;
+            margin-bottom:16px;
+            border:1px solid #374151;
+        }}
+        .home-btn:hover {{
+            background:#374151;
+        }}
+
         /* 四組卡片底色 */
         .card-group-1 {{ 
             background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)) !important;
             backdrop-filter: blur(6px);
         }}
-
         .card-group-2 {{ 
             background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)) !important;
             backdrop-filter: blur(6px);
         }}
-
         .card-group-3 {{ 
             background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)) !important;
             backdrop-filter: blur(6px);
         }}
-
         .card-group-4 {{ 
             background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)) !important;
             backdrop-filter: blur(6px);
@@ -211,7 +227,6 @@ def dashboard(symbol: str):
             font-weight: 600;
         }}
 
-        /* 趨勢條 */
         .trend-bar {{
             height: 8px;
             border-radius: 4px;
@@ -222,7 +237,6 @@ def dashboard(symbol: str):
             );
         }}
 
-        /* 波動熱度 */
         .heat {{
             height: 10px;
             border-radius: 5px;
@@ -236,31 +250,26 @@ def dashboard(symbol: str):
             color: #6b7280;
             text-align: right;
         }}
-
-        @media (max-width: 600px) {{
-            .title {{
-                font-size: 1.6rem;
-            }}
-            .card-value {{
-                font-size: 1.4rem;
-            }}
-        }}
     </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="title">{symbol} Prediction Dashboard</div>
-        <div class="subtitle">深色金融風 · 儀表板 · 手機優化 · 高級版</div>
 
+        <!-- ⭐ 回主頁按鈕 -->
+        <a class="home-btn" href="/">🏠 回主頁</a>
+
+        <!-- 股票切換 -->
         <div style="margin-bottom:16px;">
             <a href="/dashboard/MU" style="margin-right:8px;color:#93c5fd;text-decoration:none;">MU</a>
             <a href="/dashboard/SNDK" style="color:#93c5fd;text-decoration:none;">SNDK</a>
         </div>
 
+        <div class="title">{symbol} Prediction Dashboard</div>
+        <div class="subtitle">深色金融風 · 儀表板 · 手機優化 · 高級版</div>
+
         <div class="grid">
 
-            <!-- 組 1 -->
             <div class="card card-group-1">
                 <div class="card-title">目前價格</div>
                 <div class="card-value">{current_price}</div>
@@ -269,20 +278,9 @@ def dashboard(symbol: str):
 
             <div class="card card-group-1">
                 <div class="card-title">預估方向</div>
-                <div class="card-value direction">{direction_text}</div>
-                <div style="
-                    width: 80px;
-                    height: 80px;
-                    border-radius: 50%;
-                    border: 6px solid #1f2937;
-                    border-top-color: {direction_color};
-                    margin: 12px auto 0 auto;
-                    transform: rotate({score * 180}deg);
-                    transition: transform 0.6s ease;
-                "></div>
+                <div class="card-value">{direction_text}</div>
             </div>
 
-            <!-- 組 2 -->
             <div class="card card-group-2">
                 <div class="card-title">5 分鐘最佳買入價</div>
                 <div class="card-value">{best_buy_5m}</div>
@@ -295,7 +293,6 @@ def dashboard(symbol: str):
                 <div class="heat"></div>
             </div>
 
-            <!-- 組 3 -->
             <div class="card card-group-3">
                 <div class="card-title">15 分鐘最高價</div>
                 <div class="card-value">{est_high15}</div>
@@ -306,7 +303,6 @@ def dashboard(symbol: str):
                 <div class="card-value">{est_low15}</div>
             </div>
 
-            <!-- 組 4 -->
             <div class="card card-group-4">
                 <div class="card-title">全日預估最高價</div>
                 <div class="card-value">{est_high_full_day}</div>
@@ -327,7 +323,6 @@ def dashboard(symbol: str):
 </html>
 """
     return HTMLResponse(content=html)
-
 
 @app.get("/health")
 def health_check():
