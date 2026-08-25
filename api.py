@@ -66,6 +66,7 @@ def home():
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MU Prediction Dashboard</title>
+
     <style>
         body {{
             margin: 0;
@@ -123,9 +124,34 @@ def home():
             font-weight: 600;
         }}
 
-        .direction {{
-            color: {direction_color};
-            text-shadow: 0 0 12px {direction_color}80;
+        /* 趨勢條 */
+        .trend-bar {{
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            background: linear-gradient(90deg,
+                #f44336 {max(min(score*100+50,100),0)}%,
+                #4caf50 {max(min(score*100+50,100),0)}%
+            );
+        }}
+
+        /* 波動熱度 */
+        .heat {{
+            height: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            background: rgba(255, 255, 255, {min(abs(actual)*5,0.8)});
+        }}
+
+        /* 可信度儀表 */
+        .confidence {{
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 6px solid #1f2937;
+            border-top-color: {direction_color};
+            margin: 0 auto;
+            transform: rotate({score*180}deg);
         }}
 
         .footer {{
@@ -149,28 +175,32 @@ def home():
 <body>
     <div class="container">
         <div class="title">MU Prediction Dashboard</div>
-        <div class="subtitle">深色金融風 · 儀表板 · 手機優化</div>
+        <div class="subtitle">深色金融風 · 儀表板 · 手機優化 · 高級版</div>
 
         <div class="grid">
 
             <div class="card">
                 <div class="card-title">目前價格</div>
                 <div class="card-value">{current_price}</div>
+                <div class="trend-bar"></div>
             </div>
 
             <div class="card">
                 <div class="card-title">預估方向</div>
                 <div class="card-value direction">{direction_text}</div>
+                <div class="confidence"></div>
             </div>
 
             <div class="card">
                 <div class="card-title">5 分鐘最佳買入價</div>
                 <div class="card-value">{best_buy_5m}</div>
+                <div class="heat"></div>
             </div>
 
             <div class="card">
                 <div class="card-title">5 分鐘最佳賣出價</div>
                 <div class="card-value">{best_sell_5m}</div>
+                <div class="heat"></div>
             </div>
 
             <div class="card">
@@ -202,6 +232,7 @@ def home():
 </body>
 </html>
 """
+
     return HTMLResponse(content=html)
 
 @app.get("/health")
