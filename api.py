@@ -36,63 +36,88 @@ def home():
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Stock Categories</title>
+    <title>Silicon Sector Matrix</title>
+
     <style>
         body {
             margin: 0;
             padding: 0;
-            background:#0b1120;
-            color:#e5e7eb;
-            font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            text-align:center;
+            background: #0b1120;
+            color: #e5e7eb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
+
+        /* 背景：高級科技線條 */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+                linear-gradient(0deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            z-index: -1;
+        }
+
         .wrap {
             max-width: 960px;
             margin: 0 auto;
             padding: 60px 20px;
+            text-align: center;
         }
+
         h1 {
-            font-size:2.2rem;
-            margin-bottom:10px;
+            font-size: 2.6rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6);
+            -webkit-background-clip: text;
+            color: transparent;
         }
+
         h3 {
-            font-size:1.1rem;
-            color:#9ca3af;
-            margin-bottom:30px;
+            font-size: 1.1rem;
+            color: #9ca3af;
+            margin-bottom: 40px;
         }
+
         .category-btn {
-            display:block;
-            padding:18px 40px;
-            margin:12px auto;
-            font-size:1.4rem;
-            border-radius:12px;
-            text-decoration:none;
-            background:#1f2937;
-            color:#e5e7eb;
-            box-shadow:0 10px 25px rgba(0,0,0,0.45);
-            border:1px solid #374151;
-            transition:0.2s;
-            max-width:400px;
+            display: block;
+            padding: 20px 40px;
+            margin: 14px auto;
+            font-size: 1.4rem;
+            border-radius: 14px;
+            text-decoration: none;
+            background: rgba(31, 41, 55, 0.8);
+            color: #e5e7eb;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+            border: 1px solid #374151;
+            transition: 0.25s;
+            max-width: 420px;
+            backdrop-filter: blur(6px);
         }
+
         .category-btn:hover {
-            background:#374151;
-            transform:scale(1.05);
+            background: rgba(55, 65, 81, 0.9);
+            transform: scale(1.05);
         }
     </style>
 </head>
+
 <body>
+    <div class="bg-grid"></div>
+
     <div class="wrap">
         <h1>⚡ Silicon Sector Matrix</h1>
-        <h3>深色金融風 · 手機優化 · 多股票系統</h3>
+        <h3>半導體 · 記憶體 · AI · 多股票智能中樞</h3>
 
         <!-- 記憶體存儲分類 -->
         <a class="category-btn" href="/category/memory">記憶體存儲 Memory</a>
 
-        <!-- 未來你可以新增更多分類 -->
+        <!-- 未來分類（你可以自由新增） -->
         <!--
         <a class="category-btn" href="/category/cpu">CPU</a>
         <a class="category-btn" href="/category/gpu">GPU</a>
-        <a class="category-btn" href="/category/network">網路設備</a>
+        <a class="category-btn" href="/category/ai">AI 加速器</a>
         -->
     </div>
 </body>
