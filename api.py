@@ -115,13 +115,10 @@ def dashboard(symbol: str):
     ts = result.get("timestamp")
 
     direction_text = "持平"
-    direction_color = "#cccccc"
     if score > 0:
         direction_text = "上漲 📈"
-        direction_color = "#4caf50"
     elif score < 0:
         direction_text = "下跌 📉"
-        direction_color = "#f44336"
 
     trend_percent = max(min(score * 100 + 50, 100), 0)
     heat_alpha = min(abs(actual) * 5, 0.8)
@@ -133,13 +130,7 @@ def dashboard(symbol: str):
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- 自動每分鐘更新 -->
-    <meta http-equiv="refresh" content="60">
-
     <title>{symbol} Prediction Dashboard</title>
-
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body {{
@@ -175,15 +166,6 @@ def dashboard(symbol: str):
             font-size: 1rem;
             color: #93c5fd;
             margin-bottom: 10px;
-        }}
-
-        .chart-box {{
-            background:#111827;
-            padding:16px;
-            border-radius:12px;
-            margin-bottom:20px;
-            box-shadow:0 10px 25px rgba(0,0,0,0.45);
-            border:1px solid #1f2937;
         }}
 
         .title {{
@@ -250,6 +232,23 @@ def dashboard(symbol: str):
             color: #6b7280;
             text-align: right;
         }}
+
+        .card-group-1 {{
+            background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25));
+            backdrop-filter: blur(6px);
+        }}
+        .card-group-2 {{
+            background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25));
+            backdrop-filter: blur(6px);
+        }}
+        .card-group-3 {{
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25));
+            backdrop-filter: blur(6px);
+        }}
+        .card-group-4 {{
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25));
+            backdrop-filter: blur(6px);
+        }}
     </style>
 </head>
 
@@ -258,81 +257,18 @@ def dashboard(symbol: str):
 
         <a class="home-btn" href="/">🏠 回主頁</a>
 
-        <!-- 股票切換 -->
         <div style="margin-bottom:16px;">
             <a href="/dashboard/MU" style="margin-right:8px;color:#93c5fd;text-decoration:none;">MU</a>
             <a href="/dashboard/SNDK" style="color:#93c5fd;text-decoration:none;">SNDK</a>
         </div>
 
         <div class="title">{symbol} Prediction Dashboard</div>
-        <div class="subtitle">深色金融風 · 即時走勢圖 · 手機優化</div>
+        <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
 
         <!-- 倒數計時 -->
         <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
 
-        <!-- 圖表 -->
-        <div class="chart-box">
-            <canvas id="chart" height="250"></canvas>
-        </div>
-
         <script>
-            let ctx = document.getElementById('chart').getContext('2d');
-
-            let chart = new Chart(ctx, {{
-                type: 'bar',
-                data: {{
-                    labels: ['目前價格'],
-                    datasets: [
-                        {{
-                            type: 'bar',
-                            label: '目前價格',
-                            data: [{current_price}],
-                            backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                            borderColor: 'rgba(255, 255, 255, 1)',
-                            borderWidth: 2
-                        }},
-                        {{
-                            type: 'line',
-                            label: '15 分鐘最高價',
-                            data: [{est_high15}],
-                            borderColor: '#4ade80',
-                            backgroundColor: 'rgba(74, 222, 128, 0.3)',
-                            borderWidth: 3,
-                            tension: 0.3
-                        }},
-                        {{
-                            type: 'line',
-                            label: '15 分鐘最低價',
-                            data: [{est_low15}],
-                            borderColor: '#60a5fa',
-                            backgroundColor: 'rgba(96, 165, 250, 0.3)',
-                            borderWidth: 3,
-                            tension: 0.3
-                        }}
-                    ]
-                }},
-                options: {{
-                    responsive: true,
-                    plugins: {{
-                        legend: {{
-                            labels: {{
-                                color: '#e5e7eb'
-                            }}
-                        }}
-                    }},
-                    scales: {{
-                        x: {{
-                            ticks: {{ color: '#e5e7eb' }},
-                            grid: {{ color: '#374151' }}
-                        }},
-                        y: {{
-                            ticks: {{ color: '#e5e7eb' }},
-                            grid: {{ color: '#374151' }}
-                        }}
-                    }}
-                }}
-            }});
-
             // 倒數計時
             let sec = 60;
             setInterval(() => {{
@@ -340,13 +276,27 @@ def dashboard(symbol: str):
                 if (sec <= 0) sec = 60;
                 document.getElementById('count').innerText = sec;
             }}, 1000);
+
+            // 即時跳動價格（每 5 秒抓一次 API）
+            async function refreshPrice() {{
+                try {{
+                    let res = await fetch("/predict/{symbol}");
+                    let data = await res.json();
+
+                    document.getElementById("price").innerText = data.current_price.toFixed(1);
+                }} catch (e) {{
+                    console.log("更新失敗", e);
+                }}
+            }}
+
+            setInterval(refreshPrice, 5000);
         </script>
 
         <div class="grid">
 
             <div class="card card-group-1">
                 <div class="card-title">目前價格</div>
-                <div class="card-value">{current_price}</div>
+                <div class="card-value" id="price">{current_price}</div>
                 <div class="trend-bar"></div>
             </div>
 
@@ -374,29 +324,6 @@ def dashboard(symbol: str):
 
             <div class="card card-group-3">
                 <div class="card-title">15 分鐘最低價</div>
-                <div class="card-value">{est_low15}</div>
-            </div>
-
-            <div class="card card-group-4">
-                <div class="card-title">全日預估最高價</div>
-                <div class="card-value">{est_high_full_day}</div>
-            </div>
-
-            <div class="card card-group-4">
-                <div class="card-title">全日預估最低價</div>
-                <div class="card-value">{est_low_full_day}</div>
-            </div>
-
-        </div>
-
-        <div class="footer">
-            更新時間：{ts}
-        </div>
-    </div>
-</body>
-</html>
-"""
-    return HTMLResponse(content=html)
 
 @app.get("/health")
 def health_check():
