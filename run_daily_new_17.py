@@ -12,13 +12,16 @@ import json
 # 0. 進階版自動學習（B）
 # ============================================
 
-WEIGHTS_FILE = "mu_weights.json"
+def get_weights_file(symbol):
+    return f"{symbol.lower()}_weights.json"
+
 LEARNING_RATE = 0.05
 SMOOTHING_ALPHA = 0.3
 
-def load_weights():
+def load_weights(symbol):
+    file = get_weights_file(symbol)
     try:
-        with open(WEIGHTS_FILE, "r", encoding="utf-8") as f:
+        with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
     except:
         w = {
@@ -31,11 +34,12 @@ def load_weights():
             "dir30": 0.05,
             "bias": 0.0
         }
-        save_weights(w)
+        save_weights(symbol, w)
         return w
 
-def save_weights(w):
-    with open(WEIGHTS_FILE, "w", encoding="utf-8") as f:
+def save_weights(symbol, w):
+    file = get_weights_file(symbol)
+    with open(file, "w", encoding="utf-8") as f:
         json.dump(w, f, ensure_ascii=False, indent=2)
 
 def predict(weights, features):
@@ -69,114 +73,7 @@ def update_weights(weights, features, actual, predicted):
     return new_w
 
 # ============================================
-# 1. 自動扣額度（每月）
-# ============================================
-
-PUSH_COUNT_FILE = "push_count.json"
-
-def load_push_count():
-    try:
-        with open(PUSH_COUNT_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        data = {"month": datetime.now().strftime("%Y-%m"), "count": 0}
-        save_push_count(data)
-        return data
-
-def save_push_count(data):
-    with open(PUSH_COUNT_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def add_push_count():
-    today_month = datetime.now().strftime("%Y-%m")
-    data = load_push_count()
-
-    if data["month"] != today_month:
-        data["month"] = today_month
-        data["count"] = 0
-
-    data["count"] += 1
-    save_push_count(data)
-
-# ============================================
-# 2. LINE 廣播推播
-# ============================================
-
-LINE_CHANNEL_ACCESS_TOKEN = "VK2OUm7lcUnjgIhnLElhzimTFuUOyWQ80XaaNVDpDPLOkbTtWxN9wjos8qcSQq9u64BNAY3ktCy4KvdoXZoMHPZUXAOeHLhkDMhOyw+kehYL4G7J7ALBeoi8DOsUL2seKahQttVSupNgeORM28AtXwdB04t89/1O/w1cDnyilFU="
-
-def send_line_broadcast(message):
-    url = "https://api.line.me/v2/bot/message/broadcast"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
-    }
-    data = {
-        "messages": [{"type": "text", "text": message}]
-    }
-
-    try:
-        r = requests.post(url, headers=headers, json=data, timeout=10)
-        if r.status_code == 200:
-            print("LINE 廣播成功")
-            add_push_count()
-            return True
-        print("LINE 廣播失敗：", r.status_code, r.text)
-        return False
-    except Exception as e:
-        print("LINE 廣播例外：", e)
-        return False
-
-# ============================================
-# 3. Push 備援
-# ============================================
-
-LINE_USER_ID = "U7b17a87cd8efbd13bf4fa39a1164d586"
-
-def send_line_push(user_id, message):
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
-    }
-
-    data = {
-        "to": user_id,
-        "messages": [{"type": "text", "text": message}]
-    }
-
-    try:
-        r = requests.post(url, headers=headers, json=data, timeout=10)
-        if r.status_code == 200:
-            print("Push 備援成功")
-            add_push_count()
-            return True
-
-        print("Push 備援失敗：", r.status_code, r.text)
-        return False
-
-    except Exception as e:
-        print("Push 備援例外：", e)
-        return False
-
-# ============================================
-# 4. 偵測好友數量
-# ============================================
-
-def get_follower_count():
-    url = "https://api.line.me/v2/bot/insight/followers"
-    headers = {
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
-    }
-    try:
-        r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code == 200:
-            return r.json().get("followers", 1)
-        return 1
-    except:
-        return 1
-
-# ============================================
-# 5. CSV 自動解鎖
+# 1. CSV 自動解鎖
 # ============================================
 
 def wait_for_csv(path, timeout=10):
@@ -192,7 +89,7 @@ def wait_for_csv(path, timeout=10):
             time.sleep(0.5)
 
 # ============================================
-# 6. 安全取值
+# 2. 安全取值
 # ============================================
 
 def safe_value(v, default=0):
@@ -212,17 +109,20 @@ def safe_calc(v, fallback):
         return fallback
 
 # ============================================
-# 7. Finnhub
+# 3. Finnhub
 # ============================================
 
 FINNHUB_API_KEY = "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
 finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 
 # ============================================
-# 8. 主推播程式（你的原始邏輯）
+# 4. 主預測程式（多股票版）
 # ============================================
 
 def run_prediction(symbol="MU", return_dict=False):
+
+    symbol = symbol.upper()
+
     tz_tw = pytz.timezone("Asia/Taipei")
     now_tw = datetime.now(tz_tw)
     version_time = now_tw.strftime("%H:%M:%S")
@@ -230,11 +130,11 @@ def run_prediction(symbol="MU", return_dict=False):
     today = now_tw.strftime("%Y-%m-%d")
 
     # ============================================
-    # 9. MU 日 K 線
+    # 5. 日 K 線（多股票版）
     # ============================================
 
-    ohlc_csv_path = "mu_daily_ohlc.csv"
-    forecast_csv_path = "mu_full_day_history.csv"
+    ohlc_csv_path = f"{symbol.lower()}_daily_ohlc.csv"
+    forecast_csv_path = f"{symbol.lower()}_full_day_history.csv"
 
     def update_daily_ohlc():
         url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=D&count=60&token={FINNHUB_API_KEY}"
@@ -274,7 +174,7 @@ def run_prediction(symbol="MU", return_dict=False):
 
         file_exists = os.path.isfile(ohlc_csv_path)
         if not wait_for_csv(ohlc_csv_path):
-            print("mu_daily_ohlc.csv 被鎖住，無法寫入")
+            print(f"{ohlc_csv_path} 被鎖住，無法寫入")
             return df
 
         df.to_csv(ohlc_csv_path, index=False, encoding="utf-8")
@@ -283,20 +183,20 @@ def run_prediction(symbol="MU", return_dict=False):
     ohlc_df = update_daily_ohlc()
     if ohlc_df is not None and not ohlc_df.empty:
         latest_row = ohlc_df.iloc[-1]
-        atr_mu = safe_value(latest_row["atr"], 0)
+        atr_symbol = safe_value(latest_row["atr"], 0)
         prev_close = safe_value(latest_row["close"], 0)
     else:
-        atr_mu = 0
-        prev_close = safe_value(finnhub_client.quote("MU").get("pc"), 0)
+        atr_symbol = 0
+        prev_close = safe_value(finnhub_client.quote(symbol).get("pc"), 0)
 
-    atr_factor = atr_mu / prev_close if prev_close > 0 else 0
+    atr_factor = atr_symbol / prev_close if prev_close > 0 else 0
 
     # ============================================
-    # 14. 1 分鐘 K 線
+    # 6. 1 分鐘 K 線（多股票版）
     # ============================================
 
     def get_1m_klines():
-        url = f"https://finnhub.io/api/v1/stock/candle?symbol=MU&resolution=1&count=60&token={FINNHUB_API_KEY}"
+        url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=1&count=60&token={FINNHUB_API_KEY}"
         r = requests.get(url)
         data = r.json()
         if data.get("s") != "ok":
@@ -315,38 +215,31 @@ def run_prediction(symbol="MU", return_dict=False):
         return df
 
     # ============================================
-    # 14.3 K 線合理性檢查（最終穩定版）
+    # 7. K 線合理性檢查
     # ============================================
 
     def is_valid_kline(df):
         if df is None or df.empty:
             return False
 
-        # 最新一根 K 線
         h = df["h"].iloc[-1]
         l = df["l"].iloc[-1]
         c = df["c"].iloc[-1]
         o = df["o"].iloc[-1]
 
-        # 價格不能為 0 或負
         if c <= 0 or h <= 0 or l <= 0 or o <= 0:
             return False
 
-        # 價格不能離目前價格太遠（避免前一天資料）
-        # 例如：目前 896，但 K 線回傳 h=2000 或 l=20
         if h > c * 1.02 or l < c * 0.98:
             return False
 
-        # 高低差不能超過 2%
         if (h - l) > c * 0.02:
             return False
 
-        # 異常跳價（超過 ±2%）
         ret_1m = df["c"].pct_change().iloc[-1]
         if abs(ret_1m) > 0.02:
             return False
 
-        # 開盤價不能離收盤太遠（避免盤後怪資料）
         if abs(o - c) > c * 0.02:
             return False
 
@@ -355,31 +248,24 @@ def run_prediction(symbol="MU", return_dict=False):
     k_df = get_1m_klines()
 
     # ============================================
-    # 14.4 短週期特徵（最終穩定版）
+    # 8. 短週期特徵
     # ============================================
 
     def compute_short_features(df):
         df = df.copy()
 
-        # 報酬率限制（避免爆衝）
         df["ret_1m"] = df["c"].pct_change().clip(-0.05, 0.05)
         df["ret_3m"] = df["c"].pct_change(3).clip(-0.10, 0.10)
         df["ret_5m"] = df["c"].pct_change(5).clip(-0.15, 0.15)
 
-        # ATR 過濾（避免高低點異常）
         raw_atr = df["h"] - df["l"]
         df["atr_1m"] = raw_atr.where(raw_atr < df["c"] * 0.05, df["c"] * 0.02)
         df["atr_5m"] = df["atr_1m"].rolling(5).mean()
 
-        # Finnhub 無 volume → 用 0
         df["vol_1m"] = 0
         df["vol_5m"] = 0
 
         return df
-
-    # ============================================
-    # 14.4 使用短週期特徵（最終穩定版）
-    # ============================================
 
     df_1m = get_1m_klines()
 
@@ -402,36 +288,38 @@ def run_prediction(symbol="MU", return_dict=False):
         atr_1m = atr_5m = 0
         vol_1m = vol_5m = 0
 
-      # ============================================
-    # 10. MU 即時成交價（盤中 / 盤後 / 盤前）
+    # ============================================
+    # 9. 即時成交價（多股票版）
     # ============================================
 
     def get_realtime_price():
         try:
-            r = requests.get(f"https://finnhub.io/api/v1/stock/trades?symbol=MU&token={FINNHUB_API_KEY}")
+            r = requests.get(f"https://finnhub.io/api/v1/stock/trades?symbol={symbol}&token={FINNHUB_API_KEY}")
             trades = r.json().get("data", [])
             if trades:
                 return safe_value(trades[-1]["p"], None)
         except:
             pass
-        # 盤中 1 分鐘 K 線
+
         try:
             df_1m = get_1m_klines()
             if df_1m is not None and not df_1m.empty:
                 return safe_value(df_1m["c"].iloc[-1], None)
         except:
             pass
-        # quote 備援
+
         try:
-            quote_mu = finnhub_client.quote(symbol)
-            return safe_value(quote_mu.get("c"), None)
+            quote_symbol = finnhub_client.quote(symbol)
+            return safe_value(quote_symbol.get("c"), None)
         except:
             pass
+
         return prev_close
+
     current_price = get_realtime_price()
 
     # ============================================
-    # 11. SOXX
+    # 10. SOXX
     # ============================================
 
     try:
@@ -441,23 +329,23 @@ def run_prediction(symbol="MU", return_dict=False):
         semi_return = 0
 
     # ============================================
-    # 12. NASDAQ Futures
+    # 11. NASDAQ Futures
     # ============================================
 
     try:
-        r = requests.get(f"https://finnhub.io/api/v1/stock/trades?symbol={symbol}&token={FINNHUB_API_KEY}")
+        r = requests.get(f"https://finnhub.io/api/v1/quote?symbol=NQ=F&token={FINNHUB_API_KEY}")
         futures_return = safe_value(r.json().get("dp"), 0) / 100
     except:
         futures_return = 0
 
     # ============================================
-    # 13. Gap
+    # 12. Gap
     # ============================================
 
     gap_pre = (current_price - prev_close) / prev_close if prev_close > 0 else 0
 
     # ============================================
-    # 14.5  五分鐘最佳買入 / 賣出價格（方案 B：貼近現價 + 微幅方向）
+    # 13. 五分鐘預估（含永不反轉）
     # ============================================
 
     def compute_5m_signals(
@@ -467,38 +355,32 @@ def run_prediction(symbol="MU", return_dict=False):
         vol_1m, vol_5m,
         semi_return, futures_return
     ):
-        # 1. 短週期方向（保留你的原始邏輯）
         short_direction = (
             ret_1m * 0.50 +
             ret_3m * 0.30 +
             ret_5m * 0.20
         )
 
-        # 2. 將方向壓縮成「微幅變動」
-        #    原本可能 ±1%～±5%，現在縮成 ±0.25%
-        price_change_est = short_direction * 0.25
-
-        # 3. 限制在 ±0.3%（非常穩定）
+        price_change_est = short_direction * 0.1
         price_change_est = max(min(price_change_est, 0.003), -0.003)
 
-        # 4. 五分鐘高低點（貼近現價）
         est_high_5m = current_price * (1 + price_change_est)
         est_low_5m  = current_price * (1 - price_change_est)
 
-        # 5. 建議買賣價（微幅調整）
-        best_buy_5m  = est_low_5m  * 1.001   # +0.1%
-        best_sell_5m = est_high_5m * 0.999   # -0.1%
+        best_buy_5m  = est_low_5m  * 1.001
+        best_sell_5m = est_high_5m * 0.999
 
-        # ⭐⭐⭐ 永不反轉（確保賣出價永遠高於買入價）
+        # 永不反轉
         true_low = min(best_buy_5m, best_sell_5m)
         true_high = max(best_buy_5m, best_sell_5m)
+
         best_buy_5m = true_low
         best_sell_5m = true_high
 
         return best_buy_5m, best_sell_5m
 
     # ============================================
-    # 15. 30 分鐘三因子
+    # 14. 30 分鐘三因子
     # ============================================
 
     if k_df is not None and len(k_df) >= 30:
@@ -517,7 +399,10 @@ def run_prediction(symbol="MU", return_dict=False):
         vol_30m_factor = 0
         direction_30m = 0
 
-    # 14.6 計算五分鐘最佳買入 / 賣出價格
+    # ============================================
+    # 15. 五分鐘最佳買入 / 賣出價格
+    # ============================================
+
     best_buy_5m, best_sell_5m = compute_5m_signals(
         current_price,
         ret_1m, ret_3m, ret_5m,
@@ -526,28 +411,23 @@ def run_prediction(symbol="MU", return_dict=False):
         semi_return, futures_return
     )
 
-    # ============================
-    # A. 計算價差比例
-    # ============================
+    # ============================================
+    # 16. 價差調整
+    # ============================================
+
     spread_5m = best_sell_5m - best_buy_5m
     spread_ratio_5m = spread_5m / current_price
 
-    # baseline（正常情況下的價差）
-    baseline_spread_ratio = 0.002   # 0.2%
-
-    # 多拉開多少
+    baseline_spread_ratio = 0.002
     extra_spread_ratio = spread_ratio_5m - baseline_spread_ratio
-    extra_spread_ratio = max(extra_spread_ratio, 0)   # ← 建議補這行
+    extra_spread_ratio = max(extra_spread_ratio, 0)
     extra_spread_pct = extra_spread_ratio * 100
 
-    # ============================
-    # B. 將多拉開整合進價格本身
-    # ============================
     best_buy_5m_adjusted  = best_buy_5m  * (1 - extra_spread_ratio)
     best_sell_5m_adjusted = best_sell_5m * (1 + extra_spread_ratio)
 
     # ============================================
-    # 16. 整合成模型特徵
+    # 17. 整合特徵
     # ============================================
 
     features = {
@@ -561,14 +441,14 @@ def run_prediction(symbol="MU", return_dict=False):
     }
 
     # ============================================
-    # 17. 讀取權重 + 預測
+    # 18. 讀取權重 + 預測
     # ============================================
 
-    weights = load_weights()
+    weights = load_weights(symbol)
     predicted_score = predict(weights, features)
 
     # ============================================
-    # 18. 原始預估模型
+    # 19. 原始預估模型
     # ============================================
 
     est_high_full_day = safe_calc(
@@ -593,8 +473,8 @@ def run_prediction(symbol="MU", return_dict=False):
             + gap_pre * -0.05
             - atr_factor * 0.10
             + return_30m * -0.20
-            - vol_30m_factor * -0.10
-            - direction_30m * -0.05
+            - vol_30m_factor * 0.10
+            - direction_30m * 0.05
         ),
         current_price
     )
@@ -626,7 +506,8 @@ def run_prediction(symbol="MU", return_dict=False):
         ),
         current_price
     )
-    # 永不反轉（最終穩定版）
+
+    # 永不反轉
     true_low_full  = min(est_low_full_day, est_high_full_day)
     true_high_full = max(est_low_full_day, est_high_full_day)
 
@@ -634,61 +515,25 @@ def run_prediction(symbol="MU", return_dict=False):
     true_high15 = max(est_low15, est_high15)
 
     # ============================================
-    # 19. 實際結果
+    # 20. 實際結果
     # ============================================
 
     actual_result = (current_price - prev_close) / prev_close if prev_close > 0 else 0
 
     # ============================================
-    # 20. 更新權重
+    # 21. 更新權重
     # ============================================
 
     new_weights = update_weights(weights, features, actual_result, predicted_score)
-    save_weights(new_weights)
+    save_weights(symbol, new_weights)
 
     # ============================================
-    # 21. 自動扣額度（每月）
+    # 22. 回傳結果（給 API 用）
     # ============================================
 
-    push_data = load_push_count()
-    used = push_data["count"]
-    limit = 6000
-    remaining = limit - used
-
-    # ============================================
-    # 22. 推播訊息
-    # ============================================
-
-    msg = (
-        f"【MU 預估系統】\n"
-        f"版本時間：{version_time}\n\n"
-        f"整天預估最高價：{round(true_high_full,2)}\n"
-        f"整天預估最低價：{round(true_low_full,2)}\n\n"
-        f"未來15分鐘預估最高價：{round(true_high15,2)}\n"
-        f"未來15分鐘預估最低價：{round(true_low15,2)}\n\n"
-        f"--- 五分鐘建議價位 ---\n"
-        f"未來5分鐘最佳買入價格：{round(best_buy_5m_adjusted, 2)}（已調整 +{extra_spread_pct:.2f}%）\n"
-        f"未來5分鐘最佳賣出價格：{round(best_sell_5m_adjusted, 2)}（已調整 +{extra_spread_pct:.2f}%）\n"        
-        f"--- 自動學習（B 進階版）---\n"
-        f"預測分數：{predicted_score:.4f}\n"
-        f"實際結果：{actual_result:.4f}\n\n"
-        f"最新權重：\n"
-        f"半導體：{new_weights['semi']:.4f}\n"
-        f"期貨：{new_weights['futures']:.4f}\n"
-        f"GAP：{new_weights['gap']:.4f}\n"
-        f"ATR：{new_weights['atr']:.4f}\n"
-        f"30m 報酬：{new_weights['ret30']:.4f}\n"
-        f"30m 波動：{new_weights['vol30']:.4f}\n"
-        f"30m 方向：{new_weights['dir30']:.4f}\n"
-        f"Bias：{new_weights['bias']:.4f}\n\n"
-        f"--- 推播額度資訊（自動計算） ---\n"
-        f"本月推播額度：{limit} 則\n"
-        f"已使用：{used} 則\n"
-        f"剩餘：{remaining} 則\n"
-    )
-    # 如果是 API 呼叫 → 回傳 dict，不推播
     if return_dict:
         return {
+            "symbol": symbol,
             "current_price": current_price,
 
             # 5 分鐘（已調整）
@@ -703,7 +548,7 @@ def run_prediction(symbol="MU", return_dict=False):
             "true_high_full": true_high_full,
             "true_low_full": true_low_full,
 
-            # 原始值（你要保留也可以）
+            # 原始值
             "est_high15": est_high15,
             "est_low15": est_low15,
             "est_high_full_day": est_high_full_day,
@@ -714,16 +559,15 @@ def run_prediction(symbol="MU", return_dict=False):
             "predicted_score": predicted_score,
             "actual_result": actual_result,
             "weights": new_weights,
-            "timestamp": version_time
+            "timestamp": version_time,
         }
 
-    print(msg)
-
     # ============================================
-    # 24. 寫入 CSV
+    # 23. 寫入 CSV（各股票獨立檔）
     # ============================================
 
     header = [
+        "symbol",
         "日期",
         "版本時間",
         "整天預估最高價",
@@ -733,6 +577,7 @@ def run_prediction(symbol="MU", return_dict=False):
     ]
 
     row = [
+        symbol,
         today,
         version_time_csv,
         round(true_high_full, 2),
@@ -743,15 +588,16 @@ def run_prediction(symbol="MU", return_dict=False):
 
     file_exists = os.path.isfile(forecast_csv_path)
     if not wait_for_csv(forecast_csv_path):
-        print("預估 CSV 檔案被鎖住，無法寫入")
+        print(f"{forecast_csv_path} 被鎖住，無法寫入")
     else:
         with open(forecast_csv_path, "a", encoding="utf-8") as f:
             if not file_exists:
                 f.write(",".join(header) + "\n")
             f.write(",".join(map(str, row)) + "\n")
 
-    print("✔ 本次預估完成")
+    print(f"✔ 本次預估完成：{symbol} {version_time}")
 
 
-    if __name__ == "__main__":
-        pass
+if __name__ == "__main__":
+    # 測試用：直接跑一次 MU
+    run_prediction(symbol="MU", return_dict=False)
