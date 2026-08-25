@@ -36,7 +36,7 @@ def home():
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Stock Prediction Dashboard</title>
+    <title>Stock Categories</title>
     <style>
         body {
             margin: 0;
@@ -60,6 +60,78 @@ def home():
             color:#9ca3af;
             margin-bottom:30px;
         }
+        .category-btn {
+            display:block;
+            padding:18px 40px;
+            margin:12px auto;
+            font-size:1.4rem;
+            border-radius:12px;
+            text-decoration:none;
+            background:#1f2937;
+            color:#e5e7eb;
+            box-shadow:0 10px 25px rgba(0,0,0,0.45);
+            border:1px solid #374151;
+            transition:0.2s;
+            max-width:400px;
+        }
+        .category-btn:hover {
+            background:#374151;
+            transform:scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>📂 股票分類 Stock Categories</h1>
+        <h3>深色金融風 · 手機優化 · 多股票系統</h3>
+
+        <!-- 記憶體存儲分類 -->
+        <a class="category-btn" href="/category/memory">記憶體存儲 Memory</a>
+
+        <!-- 未來你可以新增更多分類 -->
+        <!--
+        <a class="category-btn" href="/category/cpu">CPU</a>
+        <a class="category-btn" href="/category/gpu">GPU</a>
+        <a class="category-btn" href="/category/network">網路設備</a>
+        -->
+    </div>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html)
+
+@app.get("/category/memory", response_class=HTMLResponse)
+def category_memory():
+    html = """
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Memory Stocks</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background:#0b1120;
+            color:#e5e7eb;
+            font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            text-align:center;
+        }
+        .wrap {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 60px 20px;
+        }
+        h1 {
+            font-size:2rem;
+            margin-bottom:10px;
+        }
+        h3 {
+            font-size:1rem;
+            color:#9ca3af;
+            margin-bottom:30px;
+        }
         a.btn {
             display:inline-block;
             padding:18px 40px;
@@ -77,15 +149,24 @@ def home():
             background:#374151;
             transform:scale(1.05);
         }
+        .back-btn {
+            display:inline-block;
+            margin-top:20px;
+            color:#93c5fd;
+            text-decoration:none;
+        }
     </style>
 </head>
 <body>
     <div class="wrap">
-        <h1>📈 多股票 AI 預估系統</h1>
-        <h3>深色金融風 · 儀表板 · 手機優化 · 高級版</h3>
+        <h1>記憶體存儲 Memory</h1>
+        <h3>分類：記憶體 · DRAM · NAND</h3>
 
-        <a class="btn" href="/dashboard/MU">MU Prediction Dashboard</a>
-        <a class="btn" href="/dashboard/SNDK">SNDK Prediction Dashboard</a>
+        <a class="btn" href="/dashboard/MU">MU Dashboard</a>
+        <a class="btn" href="/dashboard/SNDK">SNDK Dashboard</a>
+
+        <br>
+        <a class="back-btn" href="/">⬅ 回主頁</a>
     </div>
 </body>
 </html>
