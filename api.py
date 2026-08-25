@@ -166,16 +166,6 @@ def home():
                     <div class="card-title">全日預估最低價</div>
                     <div class="card-value">{est_low_full_day}</div>
                 </div>
-
-                <div class="card">
-                    <div class="card-title">預估分數 (score)</div>
-                    <div class="card-value">{score}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">實際結果 (actual)</div>
-                    <div class="card-value">{actual}</div>
-                </div>
             </div>
 
             <div class="footer">
