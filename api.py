@@ -133,10 +133,13 @@ def dashboard(symbol: str):
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- ⭐ 自動每分鐘更新 -->
+    <!-- 自動每分鐘更新 -->
     <meta http-equiv="refresh" content="60">
 
     <title>{symbol} Prediction Dashboard</title>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body {{
@@ -147,7 +150,6 @@ def dashboard(symbol: str):
             color: #e5e7eb;
         }}
 
-        /* 回主頁按鈕 */
         .home-btn {{
             display:inline-block;
             padding:10px 18px;
@@ -158,32 +160,30 @@ def dashboard(symbol: str):
             margin-bottom:16px;
             border:1px solid #374151;
         }}
+
         .home-btn:hover {{
             background:#374151;
-        }}
-
-        /* 四組卡片底色 */
-        .card-group-1 {{ 
-            background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)) !important;
-            backdrop-filter: blur(6px);
-        }}
-        .card-group-2 {{ 
-            background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)) !important;
-            backdrop-filter: blur(6px);
-        }}
-        .card-group-3 {{ 
-            background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)) !important;
-            backdrop-filter: blur(6px);
-        }}
-        .card-group-4 {{ 
-            background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)) !important;
-            backdrop-filter: blur(6px);
         }}
 
         .container {{
             max-width: 960px;
             margin: 0 auto;
             padding: 20px;
+        }}
+
+        .countdown {{
+            font-size: 1rem;
+            color: #93c5fd;
+            margin-bottom: 10px;
+        }}
+
+        .chart-box {{
+            background:#111827;
+            padding:16px;
+            border-radius:12px;
+            margin-bottom:20px;
+            box-shadow:0 10px 25px rgba(0,0,0,0.45);
+            border:1px solid #1f2937;
         }}
 
         .title {{
@@ -256,7 +256,6 @@ def dashboard(symbol: str):
 <body>
     <div class="container">
 
-        <!-- ⭐ 回主頁按鈕 -->
         <a class="home-btn" href="/">🏠 回主頁</a>
 
         <!-- 股票切換 -->
@@ -266,7 +265,82 @@ def dashboard(symbol: str):
         </div>
 
         <div class="title">{symbol} Prediction Dashboard</div>
-        <div class="subtitle">深色金融風 · 儀表板 · 手機優化 · 高級版</div>
+        <div class="subtitle">深色金融風 · 即時走勢圖 · 手機優化</div>
+
+        <!-- 倒數計時 -->
+        <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
+
+        <!-- 圖表 -->
+        <div class="chart-box">
+            <canvas id="chart" height="250"></canvas>
+        </div>
+
+        <script>
+            let ctx = document.getElementById('chart').getContext('2d');
+
+            let chart = new Chart(ctx, {{
+                type: 'bar',
+                data: {{
+                    labels: ['目前價格'],
+                    datasets: [
+                        {{
+                            type: 'bar',
+                            label: '目前價格',
+                            data: [{current_price}],
+                            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                            borderColor: 'rgba(255, 255, 255, 1)',
+                            borderWidth: 2
+                        }},
+                        {{
+                            type: 'line',
+                            label: '15 分鐘最高價',
+                            data: [{est_high15}],
+                            borderColor: '#4ade80',
+                            backgroundColor: 'rgba(74, 222, 128, 0.3)',
+                            borderWidth: 3,
+                            tension: 0.3
+                        }},
+                        {{
+                            type: 'line',
+                            label: '15 分鐘最低價',
+                            data: [{est_low15}],
+                            borderColor: '#60a5fa',
+                            backgroundColor: 'rgba(96, 165, 250, 0.3)',
+                            borderWidth: 3,
+                            tension: 0.3
+                        }}
+                    ]
+                }},
+                options: {{
+                    responsive: true,
+                    plugins: {{
+                        legend: {{
+                            labels: {{
+                                color: '#e5e7eb'
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            ticks: {{ color: '#e5e7eb' }},
+                            grid: {{ color: '#374151' }}
+                        }},
+                        y: {{
+                            ticks: {{ color: '#e5e7eb' }},
+                            grid: {{ color: '#374151' }}
+                        }}
+                    }}
+                }}
+            }});
+
+            // 倒數計時
+            let sec = 60;
+            setInterval(() => {{
+                sec--;
+                if (sec <= 0) sec = 60;
+                document.getElementById('count').innerText = sec;
+            }}, 1000);
+        </script>
 
         <div class="grid">
 
