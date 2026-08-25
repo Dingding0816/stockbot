@@ -82,10 +82,25 @@ def home():
         }}
 
         /* 四組卡片底色 */
-        .card-group-1 {{ background: #3b82f6 !important; }}
-        .card-group-2 {{ background: #10b981 !important; }}
-        .card-group-3 {{ background: #8b5cf6 !important; }}
-        .card-group-4 {{ background: #f59e0b !important; }}
+        .card-group-1 {{ 
+            background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
+
+        .card-group-2 {{ 
+            background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
+
+        .card-group-3 {{ 
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
+
+        .card-group-4 {{ 
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
 
         .container {{
             max-width: 960px;
