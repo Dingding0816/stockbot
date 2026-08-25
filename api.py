@@ -3,9 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from run_daily_new_17 import run_prediction
 
-from linebot import LineBotApi, WebhookParser
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-
 app = FastAPI(
     title="MU Prediction API",
     description="Micron (MU) AI 預估系統 API",
