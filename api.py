@@ -75,6 +75,11 @@ def home():
             background: #0b1120;
             color: #e5e7eb;
         }}
+        /* 四組卡片底色 */
+        .card-group-1 { background: #1a1f2e !important; }
+        .card-group-2 { background: #16202f !important; }
+        .card-group-3 { background: #131d2b !important; }
+        .card-group-4 { background: #101a27 !important; }
 
         .container {{
             max-width: 960px;
@@ -179,13 +184,13 @@ def home():
 
         <div class="grid">
 
-            <div class="card">
+            <div class="card card-group-1">
                 <div class="card-title">目前價格</div>
                 <div class="card-value">{current_price}</div>
                 <div class="trend-bar"></div>
             </div>
 
-            <div class="card">
+            <div class="card card-group-1">
                 <div class="card-title">預估方向</div>
                 <div class="card-value direction">{direction_text}</div>
 
@@ -202,34 +207,34 @@ def home():
                 "></div>
             </div>
 
-            <div class="card">
+            <div class="card card-group-2">
                 <div class="card-title">5 分鐘最佳買入價</div>
                 <div class="card-value">{best_buy_5m}</div>
                 <div class="heat"></div>
             </div>
 
-            <div class="card">
+            <div class="card card-group-2">
                 <div class="card-title">5 分鐘最佳賣出價</div>
                 <div class="card-value">{best_sell_5m}</div>
                 <div class="heat"></div>
             </div>
 
-            <div class="card">
+            <div class="card card-group-3">
                 <div class="card-title">15 分鐘最高價</div>
                 <div class="card-value">{est_high15}</div>
             </div>
 
-            <div class="card">
+            <div class="card card-group-3">
                 <div class="card-title">15 分鐘最低價</div>
                 <div class="card-value">{est_low15}</div>
             </div>
 
-            <div class="card">
+            <div class="card card-group-4">
                 <div class="card-title">全日預估最高價</div>
                 <div class="card-value">{est_high_full_day}</div>
             </div>
 
-            <div class="card">
+            <div class="card card-group-4">
                 <div class="card-title">全日預估最低價</div>
                 <div class="card-value">{est_low_full_day}</div>
             </div>
