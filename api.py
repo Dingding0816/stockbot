@@ -188,7 +188,18 @@ def home():
             <div class="card">
                 <div class="card-title">預估方向</div>
                 <div class="card-value direction">{direction_text}</div>
-                <div class="confidence"></div>
+
+                <!-- 可信度儀表（圓形旋轉） -->
+                <div style="
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 50%;
+                    border: 6px solid #1f2937;
+                    border-top-color: {direction_color};
+                    margin: 12px auto 0 auto;
+                    transform: rotate({score * 180}deg);
+                    transition: transform 0.6s ease;
+                "></div>
             </div>
 
             <div class="card">
