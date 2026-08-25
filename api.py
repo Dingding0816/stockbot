@@ -324,6 +324,29 @@ def dashboard(symbol: str):
 
             <div class="card card-group-3">
                 <div class="card-title">15 分鐘最低價</div>
+                <div class="card-value">{est_low15}</div>
+            </div>
+
+            <div class="card card-group-4">
+                <div class="card-title">全日預估最高價</div>
+                <div class="card-value">{est_high_full_day}</div>
+            </div>
+
+            <div class="card card-group-4">
+                <div class="card-title">全日預估最低價</div>
+                <div class="card-value">{est_low_full_day}</div>
+            </div>
+
+        </div>
+
+        <div class="footer">
+            更新時間：{ts}
+        </div>
+    </div>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html)
 
 @app.get("/health")
 def health_check():
