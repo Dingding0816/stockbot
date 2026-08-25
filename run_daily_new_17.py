@@ -222,7 +222,7 @@ finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 # 8. 主推播程式（你的原始邏輯）
 # ============================================
 
-def run_prediction(return_dict=False):
+def run_prediction(symbol="MU", return_dict=False):
     tz_tw = pytz.timezone("Asia/Taipei")
     now_tw = datetime.now(tz_tw)
     version_time = now_tw.strftime("%H:%M:%S")
@@ -237,7 +237,7 @@ def run_prediction(return_dict=False):
     forecast_csv_path = "mu_full_day_history.csv"
 
     def update_daily_ohlc():
-        url = f"https://finnhub.io/api/v1/stock/candle?symbol=MU&resolution=D&count=60&token={FINNHUB_API_KEY}"
+        url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=D&count=60&token={FINNHUB_API_KEY}"
         r = requests.get(url)
         data = r.json()
         if data.get("s") != "ok":
@@ -423,7 +423,7 @@ def run_prediction(return_dict=False):
             pass
         # quote 備援
         try:
-            quote_mu = finnhub_client.quote("MU")
+            quote_mu = finnhub_client.quote(symbol)
             return safe_value(quote_mu.get("c"), None)
         except:
             pass
@@ -445,7 +445,7 @@ def run_prediction(return_dict=False):
     # ============================================
 
     try:
-        r = requests.get(f"https://finnhub.io/api/v1/quote?symbol=NQ=F&token={FINNHUB_API_KEY}")
+        r = requests.get(f"https://finnhub.io/api/v1/stock/trades?symbol={symbol}&token={FINNHUB_API_KEY}")
         futures_return = safe_value(r.json().get("dp"), 0) / 100
     except:
         futures_return = 0
