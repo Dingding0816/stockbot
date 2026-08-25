@@ -489,6 +489,12 @@ def run_prediction(return_dict=False):
         best_buy_5m  = est_low_5m  * 1.001   # +0.1%
         best_sell_5m = est_high_5m * 0.999   # -0.1%
 
+        # ⭐⭐⭐ 永不反轉（確保賣出價永遠高於買入價）
+        true_low = min(best_buy_5m, best_sell_5m)
+        true_high = max(best_buy_5m, best_sell_5m)
+        best_buy_5m = true_low
+        best_sell_5m = true_high
+
         return best_buy_5m, best_sell_5m
 
     # ============================================
