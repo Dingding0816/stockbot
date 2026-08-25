@@ -50,6 +50,7 @@ def home():
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp")
 
+    # 方向文字與顏色
     direction_text = "持平"
     direction_color = "#cccccc"
     if score > 0:
@@ -58,6 +59,10 @@ def home():
     elif score < 0:
         direction_text = "下跌 📉"
         direction_color = "#f44336"
+
+    # ⭐⭐⭐ CSS 需要的計算值（提前算好）
+    trend_percent = max(min(score * 100 + 50, 100), 0)
+    heat_alpha = min(abs(actual) * 5, 0.8)
 
     html = f"""
 <!DOCTYPE html>
@@ -75,11 +80,12 @@ def home():
             background: #0b1120;
             color: #e5e7eb;
         }}
+
         /* 四組卡片底色 */
-        .card-group-1 { background: #1a1f2e !important; }
-        .card-group-2 { background: #16202f !important; }
-        .card-group-3 { background: #131d2b !important; }
-        .card-group-4 { background: #101a27 !important; }
+        .card-group-1 {{ background: #1a1f2e !important; }}
+        .card-group-2 {{ background: #16202f !important; }}
+        .card-group-3 {{ background: #131d2b !important; }}
+        .card-group-4 {{ background: #101a27 !important; }}
 
         .container {{
             max-width: 960px;
@@ -106,7 +112,6 @@ def home():
         }}
 
         .card {{
-            background: #111827;
             border-radius: 14px;
             padding: 18px 20px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.45);
@@ -135,8 +140,8 @@ def home():
             border-radius: 4px;
             margin-top: 10px;
             background: linear-gradient(90deg,
-                #f44336 {max(min(score*100+50,100),0)}%,
-                #4caf50 {max(min(score*100+50,100),0)}%
+                #f44336 {trend_percent}%,
+                #4caf50 {trend_percent}%
             );
         }}
 
@@ -145,18 +150,7 @@ def home():
             height: 10px;
             border-radius: 5px;
             margin-top: 10px;
-            background: rgba(255, 255, 255, {min(abs(actual)*5,0.8)});
-        }}
-
-        /* 可信度儀表 */
-        .confidence {{
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            border: 6px solid #1f2937;
-            border-top-color: {direction_color};
-            margin: 0 auto;
-            transform: rotate({score*180}deg);
+            background: rgba(255, 255, 255, {heat_alpha});
         }}
 
         .footer {{
@@ -184,6 +178,7 @@ def home():
 
         <div class="grid">
 
+            <!-- 組 1 -->
             <div class="card card-group-1">
                 <div class="card-title">目前價格</div>
                 <div class="card-value">{current_price}</div>
@@ -193,8 +188,6 @@ def home():
             <div class="card card-group-1">
                 <div class="card-title">預估方向</div>
                 <div class="card-value direction">{direction_text}</div>
-
-                <!-- 可信度儀表（圓形旋轉） -->
                 <div style="
                     width: 80px;
                     height: 80px;
@@ -207,6 +200,7 @@ def home():
                 "></div>
             </div>
 
+            <!-- 組 2 -->
             <div class="card card-group-2">
                 <div class="card-title">5 分鐘最佳買入價</div>
                 <div class="card-value">{best_buy_5m}</div>
@@ -219,6 +213,7 @@ def home():
                 <div class="heat"></div>
             </div>
 
+            <!-- 組 3 -->
             <div class="card card-group-3">
                 <div class="card-title">15 分鐘最高價</div>
                 <div class="card-value">{est_high15}</div>
@@ -229,6 +224,7 @@ def home():
                 <div class="card-value">{est_low15}</div>
             </div>
 
+            <!-- 組 4 -->
             <div class="card card-group-4">
                 <div class="card-title">全日預估最高價</div>
                 <div class="card-value">{est_high_full_day}</div>
@@ -250,6 +246,7 @@ def home():
 """
 
     return HTMLResponse(content=html)
+
 
 @app.get("/health")
 def health_check():
