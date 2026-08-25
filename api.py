@@ -82,10 +82,10 @@ def home():
         }}
 
         /* 四組卡片底色 */
-        .card-group-1 {{ background: #1a1f2e !important; }}
-        .card-group-2 {{ background: #16202f !important; }}
-        .card-group-3 {{ background: #131d2b !important; }}
-        .card-group-4 {{ background: #101a27 !important; }}
+        .card-group-1 {{ background: #3b82f6 !important; }}
+        .card-group-2 {{ background: #10b981 !important; }}
+        .card-group-3 {{ background: #8b5cf6 !important; }}
+        .card-group-4 {{ background: #f59e0b !important; }}
 
         .container {{
             max-width: 960px;
