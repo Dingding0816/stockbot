@@ -457,7 +457,7 @@ def run_prediction(return_dict=False):
     gap_pre = (current_price - prev_close) / prev_close if prev_close > 0 else 0
 
     # ============================================
-    # 14.5  五分鐘最佳買入 / 賣出價格
+    # 14.5  五分鐘最佳買入 / 賣出價格（方案 B：貼近現價 + 微幅方向）
     # ============================================
 
     def compute_5m_signals(
@@ -467,53 +467,27 @@ def run_prediction(return_dict=False):
         vol_1m, vol_5m,
         semi_return, futures_return
     ):
-
-        # 1. 短週期方向（最重要）
+        # 1. 短週期方向（保留你的原始邏輯）
         short_direction = (
             ret_1m * 0.50 +
             ret_3m * 0.30 +
             ret_5m * 0.20
         )
 
-        # 2. 短週期波動（ATR）
-        short_volatility = (
-            atr_1m * 0.6 +
-            atr_5m * 0.4
-        )
+        # 2. 將方向壓縮成「微幅變動」
+        #    原本可能 ±1%～±5%，現在縮成 ±0.1%
+        price_change_est = short_direction * 0.1
 
-        # 3. 短週期成交量（量能強弱）
-        volume_factor = (
-            vol_1m * 0.4 +
-            vol_5m * 0.6
-        )
+        # 3. 限制在 ±0.3%（非常穩定）
+        price_change_est = max(min(price_change_est, 0.003), -0.003)
 
-        # 4. 市場方向（半導體 + 期貨）
-        market_bias = (
-            semi_return * 0.4 +
-            futures_return * 0.4
-        )
-
-        # 5. 綜合短週期預估（核心公式）
-        price_change_est = (
-            short_direction * 0.6 +
-            short_volatility * 0.2 +
-            volume_factor * 0.1 +
-            market_bias * 0.1
-        )
-        # 把五分鐘預估變動幅度限制在 ±3%
-        price_change_est = max(min(price_change_est, 0.03), -0.03)
-  
-        # 6. 五分鐘高低點預估
+        # 4. 五分鐘高低點（貼近現價）
         est_high_5m = current_price * (1 + price_change_est)
         est_low_5m  = current_price * (1 - price_change_est)
 
-        # 7. 永不反轉
-        true_low = min(est_low_5m, est_high_5m)
-        true_high = max(est_low_5m, est_high_5m)
-
-        # 8. 建議價位
-        best_buy_5m  = true_low * 1.002   # 上調 0.2%
-        best_sell_5m = true_high * 0.998  # 下調 0.2%
+        # 5. 建議買賣價（微幅調整）
+        best_buy_5m  = est_low_5m  * 1.001   # +0.1%
+        best_sell_5m = est_high_5m * 0.999   # -0.1%
 
         return best_buy_5m, best_sell_5m
 
