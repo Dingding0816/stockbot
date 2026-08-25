@@ -60,122 +60,148 @@ def home():
         direction_color = "#f44336"
 
     html = f"""
-    <!DOCTYPE html>
-    <html lang="zh-TW">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>MU Prediction Dashboard</title>
-        <style>
-            body {{
-                margin: 0;
-                padding: 0;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                background: #0b1120;
-                color: #e5e7eb;
-            }}
-            .container {{
-                max-width: 960px;
-                margin: 0 auto;
-                padding: 16px;
-            }}
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MU Prediction Dashboard</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #0b1120;
+            color: #e5e7eb;
+        }}
+
+        .container {{
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+
+        .title {{
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }}
+
+        .subtitle {{
+            font-size: 1rem;
+            color: #9ca3af;
+            margin-bottom: 20px;
+        }}
+
+        .grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }}
+
+        .card {{
+            background: #111827;
+            border-radius: 14px;
+            padding: 18px 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+            border: 1px solid #1f2937;
+            transition: transform 0.2s ease;
+        }}
+
+        .card:hover {{
+            transform: scale(1.03);
+        }}
+
+        .card-title {{
+            font-size: 1rem;
+            color: #9ca3af;
+            margin-bottom: 8px;
+        }}
+
+        .card-value {{
+            font-size: 1.6rem;
+            font-weight: 600;
+        }}
+
+        .direction {{
+            color: {direction_color};
+            text-shadow: 0 0 12px {direction_color}80;
+        }}
+
+        .footer {{
+            margin-top: 22px;
+            font-size: 0.9rem;
+            color: #6b7280;
+            text-align: right;
+        }}
+
+        @media (max-width: 600px) {{
             .title {{
-                font-size: 1.8rem;
-                font-weight: 700;
-                margin-bottom: 8px;
-            }}
-            .subtitle {{
-                font-size: 0.95rem;
-                color: #9ca3af;
-                margin-bottom: 16px;
-            }}
-            .grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-                gap: 12px;
-            }}
-            .card {{
-                background: #111827;
-                border-radius: 12px;
-                padding: 14px 16px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-                border: 1px solid #1f2937;
-            }}
-            .card-title {{
-                font-size: 0.95rem;
-                color: #9ca3af;
-                margin-bottom: 6px;
+                font-size: 1.6rem;
             }}
             .card-value {{
                 font-size: 1.4rem;
-                font-weight: 600;
             }}
-            .direction {{
-                color: {direction_color};
-            }}
-            .footer {{
-                margin-top: 18px;
-                font-size: 0.85rem;
-                color: #6b7280;
-                text-align: right;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="title">MU Prediction Dashboard</div>
-            <div class="subtitle">深色金融風 · 卡片儀表板 · 手機優化</div>
+        }}
+    </style>
+</head>
 
-            <div class="grid">
-                <div class="card">
-                    <div class="card-title">目前價格</div>
-                    <div class="card-value">{current_price}</div>
-                </div>
+<body>
+    <div class="container">
+        <div class="title">MU Prediction Dashboard</div>
+        <div class="subtitle">深色金融風 · 儀表板 · 手機優化</div>
 
-                <div class="card">
-                    <div class="card-title">預估方向</div>
-                    <div class="card-value direction">{direction_text}</div>
-                </div>
+        <div class="grid">
 
-                <div class="card">
-                    <div class="card-title">5 分鐘最佳買入價</div>
-                    <div class="card-value">{best_buy_5m}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">5 分鐘最佳賣出價</div>
-                    <div class="card-value">{best_sell_5m}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">15 分鐘最高價</div>
-                    <div class="card-value">{est_high15}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">15 分鐘最低價</div>
-                    <div class="card-value">{est_low15}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">全日預估最高價</div>
-                    <div class="card-value">{est_high_full_day}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">全日預估最低價</div>
-                    <div class="card-value">{est_low_full_day}</div>
-                </div>
+            <div class="card">
+                <div class="card-title">目前價格</div>
+                <div class="card-value">{current_price}</div>
             </div>
 
-            <div class="footer">
-                更新時間：{ts}
+            <div class="card">
+                <div class="card-title">預估方向</div>
+                <div class="card-value direction">{direction_text}</div>
             </div>
+
+            <div class="card">
+                <div class="card-title">5 分鐘最佳買入價</div>
+                <div class="card-value">{best_buy_5m}</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">5 分鐘最佳賣出價</div>
+                <div class="card-value">{best_sell_5m}</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">15 分鐘最高價</div>
+                <div class="card-value">{est_high15}</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">15 分鐘最低價</div>
+                <div class="card-value">{est_low15}</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">全日預估最高價</div>
+                <div class="card-value">{est_high_full_day}</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">全日預估最低價</div>
+                <div class="card-value">{est_low_full_day}</div>
+            </div>
+
         </div>
-    </body>
-    </html>
-    """
 
+        <div class="footer">
+            更新時間：{ts}
+        </div>
+    </div>
+</body>
+</html>
+"""
     return HTMLResponse(content=html)
 
 @app.get("/health")
