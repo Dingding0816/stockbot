@@ -31,38 +31,69 @@ def predict_symbol(symbol: str):
 @app.get("/", response_class=HTMLResponse)
 def home():
     html = """
-    <html>
-    <head>
-        <title>Stock Prediction Dashboard</title>
-        <style>
-            body { background:#0b1120; color:white; font-family:sans-serif; text-align:center; padding-top:80px; }
-            a { 
-                display:inline-block; 
-                padding:20px 40px; 
-                margin:20px; 
-                font-size:1.6rem; 
-                border-radius:12px; 
-                text-decoration:none; 
-                background:#1f2937; 
-                color:white; 
-                transition:0.2s;
-            }
-            a:hover { background:#374151; transform:scale(1.05); }
-        </style>
-    </head>
-    <body>
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stock Prediction Dashboard</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background:#0b1120;
+            color:#e5e7eb;
+            font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            text-align:center;
+        }
+        .wrap {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 60px 20px;
+        }
+        h1 {
+            font-size:2.2rem;
+            margin-bottom:10px;
+        }
+        h3 {
+            font-size:1.1rem;
+            color:#9ca3af;
+            margin-bottom:30px;
+        }
+        a.btn {
+            display:inline-block;
+            padding:18px 40px;
+            margin:12px;
+            font-size:1.4rem;
+            border-radius:12px;
+            text-decoration:none;
+            background:#1f2937;
+            color:#e5e7eb;
+            box-shadow:0 10px 25px rgba(0,0,0,0.45);
+            border:1px solid #374151;
+            transition:0.2s;
+        }
+        a.btn:hover {
+            background:#374151;
+            transform:scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
         <h1>📈 多股票 AI 預估系統</h1>
-        <h3>請選擇股票</h3>
+        <h3>深色金融風 · 儀表板 · 手機優化 · 高級版</h3>
 
-        <a href="/dashboard/MU">MU 預測</a>
-        <a href="/dashboard/SNDK">SNDK 預測</a>
-    </body>
-    </html>
-    """
+        <a class="btn" href="/dashboard/MU">MU Prediction Dashboard</a>
+        <a class="btn" href="/dashboard/SNDK">SNDK Prediction Dashboard</a>
+    </div>
+</body>
+</html>
+"""
     return HTMLResponse(content=html)
 
 # -----------------------------
-# 多股票 Dashboard
+# 多股票 Dashboard（深色金融風）
 # -----------------------------
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
@@ -96,140 +127,205 @@ def dashboard(symbol: str):
     heat_alpha = min(abs(actual) * 5, 0.8)
 
     html = f"""
-    <html>
-    <head>
-        <title>{symbol} Prediction Dashboard</title>
-        <style>
-            body {{
-                margin: 0;
-                padding: 0;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                background: #0b1120;
-                color: #e5e7eb;
-            }}
-            .container {{
-                max-width: 960px;
-                margin: 0 auto;
-                padding: 20px;
-            }}
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{symbol} Prediction Dashboard</title>
+
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #0b1120;
+            color: #e5e7eb;
+        }}
+
+        /* 四組卡片底色 */
+        .card-group-1 {{ 
+            background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
+
+        .card-group-2 {{ 
+            background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
+
+        .card-group-3 {{ 
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
+
+        .card-group-4 {{ 
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)) !important;
+            backdrop-filter: blur(6px);
+        }}
+
+        .container {{
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+
+        .title {{
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }}
+
+        .subtitle {{
+            font-size: 1rem;
+            color: #9ca3af;
+            margin-bottom: 20px;
+        }}
+
+        .grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }}
+
+        .card {{
+            border-radius: 14px;
+            padding: 18px 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+            border: 1px solid #1f2937;
+            transition: transform 0.2s ease;
+        }}
+
+        .card:hover {{
+            transform: scale(1.03);
+        }}
+
+        .card-title {{
+            font-size: 1rem;
+            color: #9ca3af;
+            margin-bottom: 8px;
+        }}
+
+        .card-value {{
+            font-size: 1.6rem;
+            font-weight: 600;
+        }}
+
+        /* 趨勢條 */
+        .trend-bar {{
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            background: linear-gradient(90deg,
+                #f44336 {trend_percent}%,
+                #4caf50 {trend_percent}%
+            );
+        }}
+
+        /* 波動熱度 */
+        .heat {{
+            height: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            background: rgba(255, 255, 255, {heat_alpha});
+        }}
+
+        .footer {{
+            margin-top: 22px;
+            font-size: 0.9rem;
+            color: #6b7280;
+            text-align: right;
+        }}
+
+        @media (max-width: 600px) {{
             .title {{
-                font-size: 2rem;
-                font-weight: 700;
-                margin-bottom: 6px;
-            }}
-            .subtitle {{
-                font-size: 1rem;
-                color: #9ca3af;
-                margin-bottom: 20px;
-            }}
-            .grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-                gap: 16px;
-            }}
-            .card {{
-                border-radius: 14px;
-                padding: 18px 20px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.45);
-                border: 1px solid #1f2937;
-                transition: transform 0.2s ease;
-            }}
-            .card:hover {{
-                transform: scale(1.03);
-            }}
-            .card-title {{
-                font-size: 1rem;
-                color: #9ca3af;
-                margin-bottom: 8px;
+                font-size: 1.6rem;
             }}
             .card-value {{
-                font-size: 1.6rem;
-                font-weight: 600;
+                font-size: 1.4rem;
             }}
-            .trend-bar {{
-                height: 8px;
-                border-radius: 4px;
-                margin-top: 10px;
-                background: linear-gradient(90deg,
-                    #f44336 {trend_percent}%,
-                    #4caf50 {trend_percent}%
-                );
-            }}
-            .heat {{
-                height: 10px;
-                border-radius: 5px;
-                margin-top: 10px;
-                background: rgba(255, 255, 255, {heat_alpha});
-            }}
-            .footer {{
-                margin-top: 22px;
-                font-size: 0.9rem;
-                color: #6b7280;
-                text-align: right;
-            }}
-        </style>
-    </head>
+        }}
+    </style>
+</head>
 
-    <body>
-        <div class="container">
-            <div class="title">{symbol} Prediction Dashboard</div>
-            <div class="subtitle">深色金融風 · 儀表板 · 手機優化 · 高級版</div>
+<body>
+    <div class="container">
+        <div class="title">{symbol} Prediction Dashboard</div>
+        <div class="subtitle">深色金融風 · 儀表板 · 手機優化 · 高級版</div>
 
-            <div class="grid">
-
-                <div class="card">
-                    <div class="card-title">目前價格</div>
-                    <div class="card-value">{current_price}</div>
-                    <div class="trend-bar"></div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">預估方向</div>
-                    <div class="card-value">{direction_text}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">5 分鐘最佳買入價</div>
-                    <div class="card-value">{best_buy_5m}</div>
-                    <div class="heat"></div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">5 分鐘最佳賣出價</div>
-                    <div class="card-value">{best_sell_5m}</div>
-                    <div class="heat"></div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">15 分鐘最高價</div>
-                    <div class="card-value">{est_high15}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">15 分鐘最低價</div>
-                    <div class="card-value">{est_low15}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">全日預估最高價</div>
-                    <div class="card-value">{est_high_full_day}</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title">全日預估最低價</div>
-                    <div class="card-value">{est_low_full_day}</div>
-                </div>
-
-            </div>
-
-            <div class="footer">
-                更新時間：{ts}
-            </div>
+        <div style="margin-bottom:16px;">
+            <a href="/dashboard/MU" style="margin-right:8px;color:#93c5fd;text-decoration:none;">MU</a>
+            <a href="/dashboard/SNDK" style="color:#93c5fd;text-decoration:none;">SNDK</a>
         </div>
-    </body>
-    </html>
-    """
 
+        <div class="grid">
+
+            <!-- 組 1 -->
+            <div class="card card-group-1">
+                <div class="card-title">目前價格</div>
+                <div class="card-value">{current_price}</div>
+                <div class="trend-bar"></div>
+            </div>
+
+            <div class="card card-group-1">
+                <div class="card-title">預估方向</div>
+                <div class="card-value direction">{direction_text}</div>
+                <div style="
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 50%;
+                    border: 6px solid #1f2937;
+                    border-top-color: {direction_color};
+                    margin: 12px auto 0 auto;
+                    transform: rotate({score * 180}deg);
+                    transition: transform 0.6s ease;
+                "></div>
+            </div>
+
+            <!-- 組 2 -->
+            <div class="card card-group-2">
+                <div class="card-title">5 分鐘最佳買入價</div>
+                <div class="card-value">{best_buy_5m}</div>
+                <div class="heat"></div>
+            </div>
+
+            <div class="card card-group-2">
+                <div class="card-title">5 分鐘最佳賣出價</div>
+                <div class="card-value">{best_sell_5m}</div>
+                <div class="heat"></div>
+            </div>
+
+            <!-- 組 3 -->
+            <div class="card card-group-3">
+                <div class="card-title">15 分鐘最高價</div>
+                <div class="card-value">{est_high15}</div>
+            </div>
+
+            <div class="card card-group-3">
+                <div class="card-title">15 分鐘最低價</div>
+                <div class="card-value">{est_low15}</div>
+            </div>
+
+            <!-- 組 4 -->
+            <div class="card card-group-4">
+                <div class="card-title">全日預估最高價</div>
+                <div class="card-value">{est_high_full_day}</div>
+            </div>
+
+            <div class="card card-group-4">
+                <div class="card-title">全日預估最低價</div>
+                <div class="card-value">{est_low_full_day}</div>
+            </div>
+
+        </div>
+
+        <div class="footer">
+            更新時間：{ts}
+        </div>
+    </div>
+</body>
+</html>
+"""
     return HTMLResponse(content=html)
 
 
