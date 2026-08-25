@@ -475,8 +475,8 @@ def run_prediction(return_dict=False):
         )
 
         # 2. 將方向壓縮成「微幅變動」
-        #    原本可能 ±1%～±5%，現在縮成 ±0.1%
-        price_change_est = short_direction * 0.1
+        #    原本可能 ±1%～±5%，現在縮成 ±0.25%
+        price_change_est = short_direction * 0.25
 
         # 3. 限制在 ±0.3%（非常穩定）
         price_change_est = max(min(price_change_est, 0.003), -0.003)
