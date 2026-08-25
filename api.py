@@ -82,7 +82,7 @@ def home():
 </head>
 <body>
     <div class="wrap">
-        <h1>📂 股票分類 Stock Categories</h1>
+        <h1>⚡ Silicon Sector Matrix</h1>
         <h3>深色金融風 · 手機優化 · 多股票系統</h3>
 
         <!-- 記憶體存儲分類 -->
