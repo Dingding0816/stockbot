@@ -534,30 +534,26 @@ def run_prediction(symbol="MU", return_dict=False):
     if return_dict:
         return {
             "symbol": symbol,
-            "current_price": current_price,
+            "current_price": float(current_price),
 
-            # 5 分鐘（已調整）
-            "best_buy_5m": best_buy_5m_adjusted,
-            "best_sell_5m": best_sell_5m_adjusted,
+            "best_buy_5m": float(best_buy_5m_adjusted),
+            "best_sell_5m": float(best_sell_5m_adjusted),
 
-            # 15 分鐘（永不反轉後）
-            "true_high15": true_high15,
-            "true_low15": true_low15,
+            "true_high15": float(true_high15),
+            "true_low15": float(true_low15),
 
-            # 整日（永不反轉後）
-            "true_high_full": true_high_full,
-            "true_low_full": true_low_full,
+            "true_high_full": float(true_high_full),
+            "true_low_full": float(true_low_full),
 
-            # 原始值
-            "est_high15": est_high15,
-            "est_low15": est_low15,
-            "est_high_full_day": est_high_full_day,
-            "est_low_full_day": est_low_full_day,
+            "est_high15": float(est_high15),
+            "est_low15": float(est_low15),
+            "est_high_full_day": float(est_high_full_day),
+            "est_low_full_day": float(est_low_full_day),
 
-            # 其他
-            "extra_spread_pct": extra_spread_pct,
-            "predicted_score": predicted_score,
-            "actual_result": actual_result,
+            "extra_spread_pct": float(extra_spread_pct),
+            "predicted_score": float(predicted_score),
+            "actual_result": float(actual_result),
+
             "weights": {k: float(v) for k, v in new_weights.items()},
             "timestamp": version_time,
         }
