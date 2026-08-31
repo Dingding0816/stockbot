@@ -139,7 +139,7 @@ def run_prediction(symbol="MU", return_dict=False):
     def update_daily_ohlc():
         url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=D&count=60&token={FINNHUB_API_KEY}"
         try:
-            r = requests.get(url, timeout=3)
+            r = requests.get(url, timeout=1)
             data = r.json()
         except:
             return None   # ← Finnhub timeout 時直接跳過
@@ -205,7 +205,7 @@ def run_prediction(symbol="MU", return_dict=False):
     def get_1m_klines():
         url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=1&count=60&token={FINNHUB_API_KEY}"
         try:
-            r = requests.get(url, timeout=3)
+            r = requests.get(url, timeout=1)
             data = r.json()
         except:
             return None   # ← Finnhub timeout 時直接跳過
@@ -304,55 +304,36 @@ def run_prediction(symbol="MU", return_dict=False):
     # ============================================
 
     def get_realtime_price():
+        # 先嘗試 trades
         try:
-            r = requests.get(f"https://finnhub.io/api/v1/stock/trades?symbol={symbol}&token={FINNHUB_API_KEY}", timeout=3)
-            try:
-                data = r.json()
-                trades = data.get("data", [])
-            except:
-                trades = []
+            r = requests.get(
+                f"https://finnhub.io/api/v1/stock/trades?symbol={symbol}&token={FINNHUB_API_KEY}",
+                timeout=1
+            )
+            data = r.json()
+            trades = data.get("data", [])
             if trades:
                 return safe_value(trades[-1]["p"], None)
         except:
-            pass
+            return prev_close   # ← Finnhub 卡住時立刻 fallback
 
+        # 再嘗試 1 分鐘 K 線
         try:
             df_1m = get_1m_klines()
             if df_1m is not None and not df_1m.empty:
                 return safe_value(df_1m["c"].iloc[-1], None)
         except:
-            pass
+            return prev_close
 
+        # 最後嘗試 quote
         try:
             quote_symbol = finnhub_client.quote(symbol)
             return safe_value(quote_symbol.get("c"), None)
         except:
-            pass
+            return prev_close
 
-        def get_realtime_price():
-            try:
-                r = requests.get(..., timeout=3)
-                data = r.json()
-                trades = data.get("data", [])
-                if trades:
-                    return safe_value(trades[-1]["p"], None)
-            except:
-                pass
-
-            try:
-                df_1m = get_1m_klines()
-                if df_1m is not None and not df_1m.empty:
-                    return safe_value(df_1m["c"].iloc[-1], None)
-            except:
-                pass
-
-            try:
-                quote_symbol = finnhub_client.quote(symbol)
-                return safe_value(quote_symbol.get("c"), None)
-            except:
-                pass
-
-            return prev_close   # ← 最重要的 fallback
+        # 全部失敗 → fallback
+        return prev_close
 
     current_price = get_realtime_price()
 
@@ -371,7 +352,7 @@ def run_prediction(symbol="MU", return_dict=False):
     # ============================================
 
     try:
-        r = requests.get(f"https://finnhub.io/api/v1/quote?symbol=NQ=F&token={FINNHUB_API_KEY}", timeout=3)
+        r = requests.get(f"https://finnhub.io/api/v1/quote?symbol=NQ=F&token={FINNHUB_API_KEY}", timeout=1)
         try:
             data = r.json()
             futures_return = safe_value(data.get("dp"), 0) / 100
