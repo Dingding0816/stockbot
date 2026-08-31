@@ -558,7 +558,7 @@ def run_prediction(symbol="MU", return_dict=False):
             "extra_spread_pct": extra_spread_pct,
             "predicted_score": predicted_score,
             "actual_result": actual_result,
-            "weights": new_weights,
+            "weights": {k: float(v) for k, v in new_weights.items()},
             "timestamp": version_time,
         }
 
