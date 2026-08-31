@@ -139,7 +139,14 @@ def run_prediction(symbol="MU", return_dict=False):
     def update_daily_ohlc():
         url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=D&count=60&token={FINNHUB_API_KEY}"
         r = requests.get(url)
-        data = r.json()
+        try:
+            data = r.json()
+        except:
+            return None
+
+        if not data or data.get("s") != "ok":
+            return None
+
         if data.get("s") != "ok":
             return None
 
@@ -198,8 +205,12 @@ def run_prediction(symbol="MU", return_dict=False):
     def get_1m_klines():
         url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=1&count=60&token={FINNHUB_API_KEY}"
         r = requests.get(url)
-        data = r.json()
-        if data.get("s") != "ok":
+        try:
+            data = r.json()
+        except:
+            return None
+
+        if not data or data.get("s") != "ok":
             return None
 
         df = pd.DataFrame({
@@ -295,7 +306,11 @@ def run_prediction(symbol="MU", return_dict=False):
     def get_realtime_price():
         try:
             r = requests.get(f"https://finnhub.io/api/v1/stock/trades?symbol={symbol}&token={FINNHUB_API_KEY}")
-            trades = r.json().get("data", [])
+            try:
+                data = r.json()
+                trades = data.get("data", [])
+            except:
+                trades = []
             if trades:
                 return safe_value(trades[-1]["p"], None)
         except:
@@ -334,7 +349,11 @@ def run_prediction(symbol="MU", return_dict=False):
 
     try:
         r = requests.get(f"https://finnhub.io/api/v1/quote?symbol=NQ=F&token={FINNHUB_API_KEY}")
-        futures_return = safe_value(r.json().get("dp"), 0) / 100
+        try:
+            data = r.json()
+            futures_return = safe_value(data.get("dp"), 0) / 100
+        except:
+            futures_return = 0
     except:
         futures_return = 0
 
