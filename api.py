@@ -150,7 +150,6 @@ def volume_chart(symbol: str):
     # -----------------------------
     plt.legend(
         handles=[bars, line],
-        labels=["成交量 Volume", "收盤價 Close Price"],
         loc="lower center",
         bbox_to_anchor=(0.5, -0.25),
         ncol=2,
