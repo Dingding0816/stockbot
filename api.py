@@ -1,5 +1,6 @@
 import requests
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as patheffects
 from datetime import datetime
 from fastapi.responses import FileResponse
 
@@ -41,66 +42,83 @@ def volume_chart(symbol: str):
 
     ts = data["t"][-15:]
     volumes = data["v"][-15:]
-    closes = data["c"][-15:]   # 收盤價
+    closes = data["c"][-15:]
     dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
 
     plt.figure(figsize=(12,5))
 
     # -----------------------------
-    # 金屬風背景（深色漸層）
+    # 更亮的金屬風背景
     # -----------------------------
     ax = plt.gca()
-    ax.set_facecolor("#1a1a1a")  # 深金屬底色
-    plt.rcParams['axes.edgecolor'] = "#888888"
-    plt.rcParams['axes.linewidth'] = 1.2
+    ax.set_facecolor("#2a2f3a")  # 更亮的深金屬底色
+    plt.rcParams['axes.edgecolor'] = "#c0c0c0"
+    plt.rcParams['axes.linewidth'] = 1.4
 
     # -----------------------------
-    # 折線圖（成交量）
+    # 折線圖（紫色）
     # -----------------------------
     plt.plot(
         dates,
         volumes,
-        color="#00eaff",
-        linewidth=3,
+        color="#b388ff",          # 高級紫
+        linewidth=3.2,
         marker="o",
-        markersize=6,
-        markerfacecolor="#00eaff",
-        markeredgecolor="#ffffff"
+        markersize=7,
+        markerfacecolor="#d1b3ff",
+        markeredgecolor="#ffffff",
+        zorder=3
     )
 
     # -----------------------------
-    # Bar 圖（每日收盤價）
+    # Bar 圖（綠色）
     # -----------------------------
     plt.bar(
         dates,
         closes,
-        color="#ffaa33",
-        alpha=0.35,
-        width=0.5,
-        label="收盤價"
+        color="#4ade80",          # 亮綠色
+        alpha=0.45,
+        width=0.55,
+        zorder=2
     )
 
     # -----------------------------
-    # Y 軸格式化（去掉 1e7）
+    # Y 軸格式化（顯示成 M）
     # -----------------------------
     import matplotlib.ticker as ticker
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M"))
 
     # -----------------------------
-    # 標題 + 美化
+    # X/Y 軸字體變亮、變大
     # -----------------------------
-    plt.title(f"{symbol} Volume & Close Price", color="#e5e7eb", fontsize=14)
-    plt.xticks(rotation=45, color="#e5e7eb")
-    plt.yticks(color="#e5e7eb")
-    plt.grid(alpha=0.2)
+    plt.xticks(rotation=45, color="#e5e7eb", fontsize=11)
+    plt.yticks(color="#e5e7eb", fontsize=11)
 
+    # -----------------------------
+    # 圖加陰影
+    # -----------------------------
+    for spine in ax.spines.values():
+        spine.set_path_effects([
+        patheffects.withSimplePatchShadow(offset=(2,-2), alpha=0.4)
+        ])
+
+
+    # -----------------------------
+    # 標題
+    # -----------------------------
+    plt.title(
+        f"{symbol} Volume & Close Price",
+        color="#f3f4f6",
+        fontsize=15,
+        pad=12
+    )
+
+    plt.grid(alpha=0.25, color="#9ca3af")
     plt.tight_layout()
     plt.savefig("volume_chart.png", dpi=150)
     plt.close()
 
     return FileResponse("volume_chart.png")
-
-
 
 # -----------------------------
 # 主頁：股票選單
