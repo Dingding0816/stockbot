@@ -45,76 +45,73 @@ def volume_chart(symbol: str):
     closes = data["c"][-15:]
     dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
 
-    plt.figure(figsize=(12,5))
+    plt.figure(figsize=(12, 5))
 
     # -----------------------------
-    # 更亮的金屬風背景
+    # 左軸：成交量（Volume）
     # -----------------------------
-    ax = plt.gca()
-    ax.set_facecolor("#2a2f3a")  # 更亮的深金屬底色
-    plt.rcParams['axes.edgecolor'] = "#c0c0c0"
-    plt.rcParams['axes.linewidth'] = 1.4
+    ax1 = plt.gca()
+    ax1.set_facecolor("#f3f4f6")  # 淺背景
+    plt.rcParams['axes.edgecolor'] = "#111827"
+    plt.rcParams['axes.linewidth'] = 1.2
 
-    # -----------------------------
-    # 折線圖（紫色）
-    # -----------------------------
-    plt.plot(
-        dates,
-        volumes,
-        color="#b388ff",          # 高級紫
-        linewidth=3.2,
-        marker="o",
-        markersize=7,
-        markerfacecolor="#d1b3ff",
-        markeredgecolor="#ffffff",
-        zorder=3
-    )
-
-    # Bar 圖（綠色）→ 用 volume 才看得到
-    plt.bar(
+    # 綠色 Bar：成交量
+    ax1.bar(
         dates,
         volumes,
         color="#4ade80",
         alpha=0.45,
         width=0.55,
-        zorder=2
+        zorder=2,
     )
 
-    # -----------------------------
-    # Y 軸格式化（顯示成 M）
-    # -----------------------------
     import matplotlib.ticker as ticker
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M"))
+    ax1.yaxis.set_major_formatter(
+        ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M")
+    )
+
+    ax1.tick_params(axis="y", colors="#111827", labelsize=11)
+    ax1.tick_params(axis="x", colors="#111827", rotation=45, labelsize=11)
 
     # -----------------------------
-    # X/Y 軸字體變亮、變大
+    # 右軸：收盤價（Close Price）
     # -----------------------------
-    plt.xticks(rotation=45, color="#e5e7eb", fontsize=11)
-    plt.yticks(color="#e5e7eb", fontsize=11)
+    ax2 = ax1.twinx()
+
+    ax2.plot(
+        dates,
+        closes,
+        color="#7c3aed",      # 紫色線
+        linewidth=2.8,
+        marker="o",
+        markersize=7,
+        markerfacecolor="#c4b5fd",
+        markeredgecolor="#111827",
+        zorder=3,
+    )
+
+    ax2.tick_params(axis="y", colors="#111827", labelsize=11)
 
     # -----------------------------
-    # 圖加陰影
+    # 圖加陰影（左軸）
     # -----------------------------
-    for spine in ax.spines.values():
+    for spine in ax1.spines.values():
         spine.set_path_effects([
-        patheffects.withSimplePatchShadow(offset=(2,-2), alpha=0.4)
+            patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)
         ])
-
 
     # -----------------------------
     # 標題
     # -----------------------------
     plt.title(
         f"{symbol} Volume & Close Price",
-        color="#f3f4f6",
-        fontsize=15,
+        color="#111827",
+        fontsize=16,
         pad=12
     )
 
-    plt.grid(alpha=0.25, color="#9ca3af")
+    plt.grid(alpha=0.25, color="#d1d5db")
     plt.tight_layout()
-    plt.savefig(f"volume_chart_{symbol}.png", dpi=150)
-    plt.close()
 
     return FileResponse(f"volume_chart_{symbol}.png")
 
