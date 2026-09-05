@@ -41,13 +41,61 @@ def volume_chart(symbol: str):
 
     ts = data["t"][-15:]
     volumes = data["v"][-15:]
+    closes = data["c"][-15:]   # 收盤價
     dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
 
-    plt.figure(figsize=(10,4))
-    plt.plot(dates, volumes, color="#00eaff", linewidth=3)
-    plt.xticks(rotation=45)
+    plt.figure(figsize=(12,5))
+
+    # -----------------------------
+    # 金屬風背景（深色漸層）
+    # -----------------------------
+    ax = plt.gca()
+    ax.set_facecolor("#1a1a1a")  # 深金屬底色
+    plt.rcParams['axes.edgecolor'] = "#888888"
+    plt.rcParams['axes.linewidth'] = 1.2
+
+    # -----------------------------
+    # 折線圖（成交量）
+    # -----------------------------
+    plt.plot(
+        dates,
+        volumes,
+        color="#00eaff",
+        linewidth=3,
+        marker="o",
+        markersize=6,
+        markerfacecolor="#00eaff",
+        markeredgecolor="#ffffff"
+    )
+
+    # -----------------------------
+    # Bar 圖（每日收盤價）
+    # -----------------------------
+    plt.bar(
+        dates,
+        closes,
+        color="#ffaa33",
+        alpha=0.35,
+        width=0.5,
+        label="收盤價"
+    )
+
+    # -----------------------------
+    # Y 軸格式化（去掉 1e7）
+    # -----------------------------
+    import matplotlib.ticker as ticker
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M"))
+
+    # -----------------------------
+    # 標題 + 美化
+    # -----------------------------
+    plt.title(f"{symbol} Volume & Close Price", color="#e5e7eb", fontsize=14)
+    plt.xticks(rotation=45, color="#e5e7eb")
+    plt.yticks(color="#e5e7eb")
+    plt.grid(alpha=0.2)
+
     plt.tight_layout()
-    plt.savefig("volume_chart.png")
+    plt.savefig("volume_chart.png", dpi=150)
     plt.close()
 
     return FileResponse("volume_chart.png")
