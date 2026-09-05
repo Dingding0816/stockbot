@@ -113,6 +113,9 @@ def volume_chart(symbol: str):
     plt.grid(alpha=0.25, color="#d1d5db")
     plt.tight_layout()
 
+    plt.savefig(f"volume_chart_{symbol}.png", dpi=150)
+    plt.close()
+    
     return FileResponse(f"volume_chart_{symbol}.png")
 
 # -----------------------------
