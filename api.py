@@ -1,7 +1,14 @@
+import requests
+import matplotlib.pyplot as plt
+from datetime import datetime
+from fastapi.responses import FileResponse
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from run_daily_new_17 import run_prediction
+FINNHUB_API_KEY = "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
+
 
 app = FastAPI(
     title="Stock Prediction API",
@@ -24,6 +31,28 @@ app.add_middleware(
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
     return run_prediction(symbol=symbol.upper(), return_dict=True)
+
+@app.get("/volume_chart/{symbol}")
+def volume_chart(symbol: str):
+    symbol = symbol.upper()
+    url = f"https://finnhub.io/api/v1/stock/candle?symbol={symbol}&resolution=D&count=30&token={FINNHUB_API_KEY}"
+    r = requests.get(url)
+    data = r.json()
+
+    ts = data["t"][-15:]
+    volumes = data["v"][-15:]
+    dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+
+    plt.figure(figsize=(10,4))
+    plt.plot(dates, volumes, color="#00eaff", linewidth=3)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig("volume_chart.png")
+    plt.close()
+
+    return FileResponse("volume_chart.png")
+
+
 
 # -----------------------------
 # 主頁：股票選單
