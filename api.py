@@ -51,18 +51,19 @@ def volume_chart(symbol: str):
     # 左軸：成交量（Volume）
     # -----------------------------
     ax1 = plt.gca()
-    ax1.set_facecolor("#f3f4f6")  # 淺背景
+    ax1.set_facecolor("#f3f4f6")
     plt.rcParams['axes.edgecolor'] = "#111827"
     plt.rcParams['axes.linewidth'] = 1.2
 
     # 綠色 Bar：成交量
-    ax1.bar(
+    bars = ax1.bar(
         dates,
         volumes,
         color="#4ade80",
         alpha=0.45,
         width=0.55,
         zorder=2,
+        label="Volume (成交量)"
     )
 
     import matplotlib.ticker as ticker
@@ -78,19 +79,47 @@ def volume_chart(symbol: str):
     # -----------------------------
     ax2 = ax1.twinx()
 
-    ax2.plot(
+    line = ax2.plot(
         dates,
         closes,
-        color="#7c3aed",      # 紫色線
+        color="#7c3aed",
         linewidth=2.8,
         marker="o",
         markersize=7,
         markerfacecolor="#c4b5fd",
         markeredgecolor="#111827",
         zorder=3,
-    )
+        label="Close Price (收盤價)"
+    )[0]
 
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
+
+    # -----------------------------
+    # 資料標籤（每個點標上成交量 & 收盤價）
+    # -----------------------------
+    # Bar 標籤（成交量）
+    for i, v in enumerate(volumes):
+        ax1.text(
+            i,
+            v,
+            f"{v/1_000_000:.1f}M",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color="#065f46"
+        )
+
+    # Line 標籤（收盤價）
+    for i, c in enumerate(closes):
+        ax2.text(
+            i,
+            c,
+            f"{c:.1f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color="#4c1d95"
+        )
 
     # -----------------------------
     # 圖加陰影（左軸）
@@ -99,6 +128,13 @@ def volume_chart(symbol: str):
         spine.set_path_effects([
             patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)
         ])
+
+    # -----------------------------
+    # 圖例（Line & Bar）
+    # -----------------------------
+    lines_labels = [line]
+    bars_labels = [bars]
+    ax1.legend(lines_labels + bars_labels, ["收盤價", "成交量"], loc="upper left")
 
     # -----------------------------
     # 標題
@@ -115,7 +151,7 @@ def volume_chart(symbol: str):
 
     plt.savefig(f"volume_chart_{symbol}.png", dpi=150)
     plt.close()
-    
+
     return FileResponse(f"volume_chart_{symbol}.png")
 
 # -----------------------------
