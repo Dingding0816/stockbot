@@ -134,7 +134,6 @@ def volume_chart(symbol: str):
     # -----------------------------
     lines_labels = [line]
     bars_labels = [bars]
-    ax1.legend(lines_labels + bars_labels, ["收盤價", "成交量"], loc="upper left")
 
     # -----------------------------
     # 標題
@@ -144,6 +143,19 @@ def volume_chart(symbol: str):
         color="#111827",
         fontsize=16,
         pad=12
+    )
+
+    # -----------------------------
+    # 圖例（放到整張圖的最下方，左右並排）
+    # -----------------------------
+    plt.legend(
+        handles=[bars, line],
+        labels=["成交量 Volume", "收盤價 Close Price"],
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.25),
+        ncol=2,
+        frameon=False,
+        fontsize=12
     )
 
     plt.grid(alpha=0.25, color="#d1d5db")
