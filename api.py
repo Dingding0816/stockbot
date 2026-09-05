@@ -115,10 +115,10 @@ def volume_chart(symbol: str):
 
     plt.grid(alpha=0.25, color="#9ca3af")
     plt.tight_layout()
-    plt.savefig("volume_chart.png", dpi=150)
+    plt.savefig(f"volume_chart_{symbol}.png", dpi=150)
     plt.close()
 
-    return FileResponse("volume_chart.png")
+    return FileResponse(f"volume_chart_{symbol}.png")
 
 # -----------------------------
 # 主頁：股票選單
