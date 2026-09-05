@@ -70,13 +70,11 @@ def volume_chart(symbol: str):
         zorder=3
     )
 
-    # -----------------------------
-    # Bar 圖（綠色）
-    # -----------------------------
+    # Bar 圖（綠色）→ 用 volume 才看得到
     plt.bar(
         dates,
-        closes,
-        color="#4ade80",          # 亮綠色
+        volumes,
+        color="#4ade80",
         alpha=0.45,
         width=0.55,
         zorder=2
