@@ -389,7 +389,9 @@ def dashboard(symbol: str):
 
 <body>
     <div class="container">
-
+        <!-- 成交量圖（新增這一行） -->
+        <img src="/volume_chart/{symbol}" style="width:100%; margin-bottom:20px; border-radius:12px;">
+        
         <a class="home-btn" href="/">🏠 回主頁</a>
 
         <div style="margin-bottom:16px;">
