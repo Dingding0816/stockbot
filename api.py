@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式，解決 savefig 崩潰
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 
 from fastapi import FastAPI
@@ -46,7 +46,7 @@ def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
-    # 為了徹底除錯，我們先強制每次刷新都重新抓取、重新畫圖，絕不使用任何可能鎖死的快取！
+    # 為了徹底看到成果，我們強迫每次刷新都重新抓取、重新畫圖，絕不留死鎖快取！
     if os.path.exists(img_filename):
         try:
             os.remove(img_filename)
@@ -56,27 +56,19 @@ def volume_chart(symbol: str):
     has_data = False
     dates, volumes, closes = [], [], []
 
-    # ======= ⚡ 【時區與休市終極對齊】精準計算上一個有效的美股開盤日 =======
+    # ======= ⚡ 【時區防禦終極釋放】完全不傳 to 參數，交由 Finnhub 伺服器自定義結束時間！ =======
     base_url = "https://finnhub.io"
-    now_utc = datetime.utcnow()
+    current_time = int(time.time())
     
-    if now_utc.weekday() == 5:    # 週六
-        last_trade_date = now_utc - timedelta(days=1)
-    elif now_utc.weekday() == 6:  # 週日
-        last_trade_date = now_utc - timedelta(days=2)
-    else:
-        last_trade_date = now_utc - timedelta(days=1)
-        
-    to_time = int(datetime(last_trade_date.year, last_trade_date.month, last_trade_date.day, 21, 0, 0).timestamp())
-    from_time = to_time - (35 * 24 * 60 * 60)
+    # from_time 設定在 40 天前，保證一定能包含足夠的 15 個交易日歷史日 K 線
+    from_time = current_time - (40 * 24 * 60 * 60)
 
-    # 💡 【物理防禦】直接在局部參數中寫死您的付費金鑰，徹底斷絕全域變數與 Render 後台環境變數撞名的死鎖 Bug！
+    # 100% 安全的參數結構：直接把 to 拿掉，token 寫死，徹底斷絕變數撞名與時區出錯
     query_params = {
         "symbol": symbol,
         "resolution": "D",
         "from": from_time,
-        "to": to_time,
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 👈 100% 精確的付費金鑰直接寫在這裡
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
     }
     
     try:
@@ -102,7 +94,7 @@ def volume_chart(symbol: str):
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：歷史資料解鎖成功，點亮最精美的趨勢圖 =======
+        # ======= 狀況 A：歷史資料完全釋放，點亮最精美的趨勢圖 =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
@@ -156,7 +148,6 @@ def volume_chart(symbol: str):
         return FileResponse(img_filename, media_type="image/png")
     
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
-
 # -----------------------------
 # 動態對照表：將英文分類標籤轉成漂亮的中文標題
 # -----------------------------
