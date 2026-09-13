@@ -3,27 +3,32 @@ MU:
   data_source: finnhub
   refresh_interval: 60
   display_name: Micron Technology
+  category: "memory"           # 新增這行：記憶體
 
 SNDK:
   model_type: memory
   data_source: finnhub
   refresh_interval: 60
   display_name: SanDisk
+  category: "memory"           # 新增這行：記憶體
 
 MXL:
   model_type: tech
   data_source: finnhub
   refresh_interval: 60
   display_name: MaxLinear
+  category: "tech"             # 新增這行：半導體/IC設計
 
 STX:
   model_type: tech
   data_source: finnhub
   refresh_interval: 60
   display_name: Seagate Technology
+  category: "storage"          # 新增這行：硬碟儲存
 
 META:
   model_type: tech
   data_source: finnhub
   refresh_interval: 60
   display_name: Meta Platforms
+  category: "ai"               # 新增這行：AI / 社群媒體
