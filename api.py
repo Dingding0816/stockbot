@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式，解決 savefig 崩潰
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 
 from fastapi import FastAPI
@@ -46,31 +46,50 @@ def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
+    # 智慧快取機制：6 小時內有圖直接回傳，極致節省付費額度
+    if os.path.exists(img_filename):
+        file_age = time.time() - os.path.getmtime(img_filename)
+        if file_age < 21600:
+            return FileResponse(img_filename, media_type="image/png")
+
     has_data = False
     dates, volumes, closes = [], [], []
 
+    # ======= ⚡ 【時區與休市終極對齊】精準計算上一個有效的美股開盤日 =======
     base_url = "https://finnhub.io"
-    current_time = int(time.time())
     
-    # 💡 【休市與時區終極防禦】
-    # 1. from 設定在 40 天前，保證一定能包含足夠的 15 個交易日歷史日 K 線
-    # 2. to 參數強制加上 3 天前（未來），徹底解決付費版 API 在「週末/休市期間」傳入即時戳記會回傳空資料（Empty）的底層時區 Bug！
-    from_time = current_time - (40 * 24 * 60 * 60)
-    to_time = current_time + (3 * 24 * 60 * 60)
+    # 1. 取得目前的 UTC 時間 (美股主要對齊 UTC)
+    now_utc = datetime.utcnow()
     
+    # 2. 如果今天是週末 (週六或週日)，或者今天還沒到美股收盤時間
+    # 我們將結束時間「強行固定在上週五美股收盤時間 (UTC 約晚上 21:00)」
+    if now_utc.weekday() == 5:    # 週六
+        last_trade_date = now_utc - timedelta(days=1)
+    elif now_utc.weekday() == 6:  # 週日
+        last_trade_date = now_utc - timedelta(days=2)
+    else:
+        # 平日如果還沒開盤或正在盤中，保險起見也往前推 1 天抓完整的前一日歷史數據
+        last_trade_date = now_utc - timedelta(days=1)
+        
+    # 將計算好的標準開盤日轉成 Finnhub 規定接收的 UNIX 時間戳記
+    to_time = int(datetime(last_trade_date.year, last_trade_date.month, last_trade_date.day, 21, 0, 0).timestamp())
+    from_time = to_time - (35 * 24 * 60 * 60)  # 往前推 35 天，確保一定有足夠的 15 筆交易日資料
+
+    # 自動優先讀取您在 Render 後台設定的頂級付費金鑰 (FINNHUB_TOKEN)
+    token = os.getenv("FINNHUB_TOKEN", "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg")
+
     query_params = {
         "symbol": symbol,
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": FINNHUB_API_KEY
+        "token": token
     }
     
     try:
         r = requests.get(base_url, params=query_params, timeout=5)
         if r.status_code == 200:
             data = r.json()
-            # 判斷 Finnhub 是否成功吐出有長度的數據
             if data.get("s") == "ok" and "t" in data and data["t"] and len(data["t"]) > 0:
                 ts = data["t"][-15:]
                 volumes = data["v"][-15:]
@@ -82,7 +101,7 @@ def volume_chart(symbol: str):
         pass
 
     # ---------------------------------------------------------
-    # 🎨 Matplotlib 繪圖邏輯（維持您最完美的雙軸高質感外觀）
+    # 🎨 Matplotlib 繪圖邏輯（100% 呈現真實市場歷史走勢）
     # ---------------------------------------------------------
     plt.clf()
     plt.close('all')
@@ -90,7 +109,7 @@ def volume_chart(symbol: str):
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：Finnhub 歷史日 K 線資料解鎖成功，點亮最美圖表！ =======
+        # ======= 狀況 A：歷史資料完全釋放，點亮最精美的趨勢圖 =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
@@ -120,7 +139,7 @@ def volume_chart(symbol: str):
         plt.grid(alpha=0.25, color="#d1d5db")
         
     else:
-        # ======= 狀況 B：防禦提示面板（萬一連線真的出了其他差錯） =======
+        # ======= 狀況 B：防禦安全提示面板 =======
         ax1.set_facecolor("#111827")
         ax1.get_xaxis().set_visible(False)
         ax1.get_yaxis().set_visible(False)
