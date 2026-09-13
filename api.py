@@ -46,44 +46,37 @@ def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
-    # 智慧快取機制：6 小時內有圖直接回傳，極致節省付費額度
+    # 為了徹底除錯，我們先強制每次刷新都重新抓取、重新畫圖，絕不使用任何可能鎖死的快取！
     if os.path.exists(img_filename):
-        file_age = time.time() - os.path.getmtime(img_filename)
-        if file_age < 21600:
-            return FileResponse(img_filename, media_type="image/png")
+        try:
+            os.remove(img_filename)
+        except Exception:
+            pass
 
     has_data = False
     dates, volumes, closes = [], [], []
 
     # ======= ⚡ 【時區與休市終極對齊】精準計算上一個有效的美股開盤日 =======
     base_url = "https://finnhub.io"
-    
-    # 1. 取得目前的 UTC 時間 (美股主要對齊 UTC)
     now_utc = datetime.utcnow()
     
-    # 2. 如果今天是週末 (週六或週日)，或者今天還沒到美股收盤時間
-    # 我們將結束時間「強行固定在上週五美股收盤時間 (UTC 約晚上 21:00)」
     if now_utc.weekday() == 5:    # 週六
         last_trade_date = now_utc - timedelta(days=1)
     elif now_utc.weekday() == 6:  # 週日
         last_trade_date = now_utc - timedelta(days=2)
     else:
-        # 平日如果還沒開盤或正在盤中，保險起見也往前推 1 天抓完整的前一日歷史數據
         last_trade_date = now_utc - timedelta(days=1)
         
-    # 將計算好的標準開盤日轉成 Finnhub 規定接收的 UNIX 時間戳記
     to_time = int(datetime(last_trade_date.year, last_trade_date.month, last_trade_date.day, 21, 0, 0).timestamp())
-    from_time = to_time - (35 * 24 * 60 * 60)  # 往前推 35 天，確保一定有足夠的 15 筆交易日資料
+    from_time = to_time - (35 * 24 * 60 * 60)
 
-    # 自動優先讀取您在 Render 後台設定的頂級付費金鑰 (FINNHUB_TOKEN)
-    token = os.getenv("FINNHUB_TOKEN", "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg")
-
+    # 💡 【物理防禦】直接在局部參數中寫死您的付費金鑰，徹底斷絕全域變數與 Render 後台環境變數撞名的死鎖 Bug！
     query_params = {
         "symbol": symbol,
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": token
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 👈 100% 精確的付費金鑰直接寫在這裡
     }
     
     try:
@@ -109,7 +102,7 @@ def volume_chart(symbol: str):
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：歷史資料完全釋放，點亮最精美的趨勢圖 =======
+        # ======= 狀況 A：歷史資料解鎖成功，點亮最精美的趨勢圖 =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
