@@ -1,13 +1,12 @@
-import time  # 請確保 api.py 最上方有 import time，如果沒有請加上去
 import requests
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
 from datetime import datetime
-from fastapi.responses import FileResponse
+import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from run_daily_new_17 import run_prediction
 
 # Finnhub API Key 設定
@@ -15,8 +14,8 @@ FINNHUB_API_KEY = "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
 
 app = FastAPI(
     title="Stock Prediction API",
-    description="MU / SNDK 多股票 AI 預估系統",
-    version="2.0.0"
+    description="MU / SNDK / MXL / STX / META 多股票 AI 預估系統",
+    version="2.1.0"
 )
 
 # 允許跨網域存取 (CORS)
@@ -34,47 +33,39 @@ app.add_middleware(
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
     return run_prediction(symbol=symbol.upper(), return_dict=True)
+
+# -----------------------------
+# 動態成交量與收盤價圖表產生器
+# -----------------------------
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
     
-    # 自動計算符合官方規範的 UNIX 時間戳記
     current_time = int(time.time())
-    thirty_days_ago = current_time - (30 * 24 * 60 * 60) # 30 天前
+    thirty_days_ago = current_time - (30 * 24 * 60 * 60)
     
-    base_url = "https://finnhub.io/api/v1/stock/candle"
+    base_url = "https://finnhub.io"
     query_params = {
         "symbol": symbol,
         "resolution": "D",
-        "from": thirty_days_ago,  # 補上官方規定的必填開始時間
-        "to": current_time,       # 補上官方規定的必填結束時間
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
+        "from": thirty_days_ago,
+        "to": current_time,
+        "token": FINNHUB_API_KEY
     }
     
     r = requests.get(base_url, params=query_params)
     
     if r.status_code != 200:
-        return {
-            "error": "Finnhub API 錯誤", 
-            "status_code": r.status_code, 
-            "message": r.text
-        }
+        return {"error": "Finnhub API 錯誤", "status_code": r.status_code, "message": r.text}
     
     try:
         data = r.json()
     except Exception as e:
-        return {
-            "error": "Finnhub 沒有回傳正確的 JSON 格式資料", 
-            "finnhub_raw_text": r.text
-        }
+        return {"error": "Finnhub 沒有回傳正確的 JSON 格式資料", "finnhub_raw_text": r.text}
 
-    # 確保 Finnhub 有回傳正確數據
     if "t" not in data or not data["t"]:
         return {"error": f"No data returned from Finnhub for {symbol}", "api_response": data}
 
-    # -----------------------------
-    # 資料切片（取最後 15 筆）
-    # -----------------------------
     ts = data["t"][-15:]
     volumes = data["v"][-15:]
     closes = data["c"][-15:]
@@ -82,105 +73,41 @@ def volume_chart(symbol: str):
 
     plt.figure(figsize=(12, 5))
 
-    # -----------------------------
-    # 左軸：成交量（Volume）
-    # -----------------------------
+    # 左軸：成交量
     ax1 = plt.gca()
     ax1.set_facecolor("#f3f4f6")
     plt.rcParams['axes.edgecolor'] = "#111827"
     plt.rcParams['axes.linewidth'] = 1.2
 
-    # 綠色 Bar：成交量
     bars = ax1.bar(
-        dates,
-        volumes,
-        color="#4ade80",
-        alpha=0.45,
-        width=0.55,
-        zorder=2,
-        label="Volume"
+        dates, volumes, color="#4ade80", alpha=0.45, width=0.55, zorder=2, label="Volume"
     )
 
     import matplotlib.ticker as ticker
-    ax1.yaxis.set_major_formatter(
-        ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M")
-    )
-
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M"))
     ax1.tick_params(axis="y", colors="#111827", labelsize=11)
     ax1.tick_params(axis="x", colors="#111827", rotation=45, labelsize=11)
 
-    # -----------------------------
-    # 右軸：收盤價（Close Price）
-    # -----------------------------
+    # 右軸：收盤價
     ax2 = ax1.twinx()
-
     line = ax2.plot(
-        dates,
-        closes,
-        color="#7c3aed",
-        linewidth=2.8,
-        marker="o",
-        markersize=7,
-        markerfacecolor="#c4b5fd",
-        markeredgecolor="#111827",
-        zorder=3,
-        label="Close Price"
-    )[0]  # 確保解構正確
+        dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
+        markerfacecolor="#c4b5fd", markeredgecolor="#111827", zorder=3, label="Close Price"
+    )[0]
 
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
 
-    # -----------------------------
-    # 資料標籤（每個點標上成交量 & 收盤價）
-    # -----------------------------
     for i, v in enumerate(volumes):
-        ax1.text(
-            i,
-            v,
-            f"{v/1_000_000:.1f}M",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color="#065f46"
-        )
+        ax1.text(i, v, f"{v/1_000_000:.1f}M", ha="center", va="bottom", fontsize=9, color="#065f46")
 
     for i, c in enumerate(closes):
-        ax2.text(
-            i,
-            c,
-            f"{c:.1f}",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color="#4c1d95"
-        )
+        ax2.text(i, c, f"{c:.1f}", ha="center", va="bottom", fontsize=9, color="#4c1d95")
 
-    # -----------------------------
-    # 圖加陰影（左軸）
-    # -----------------------------
     for spine in ax1.spines.values():
-        spine.set_path_effects([
-            patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)
-        ])
+        spine.set_path_effects([patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)])
 
-    # -----------------------------
-    # 標題與圖例
-    # -----------------------------
-    plt.title(
-        f"{symbol} Volume & Close Price",
-        color="#111827",
-        fontsize=16,
-        pad=12
-    )
-
-    plt.legend(
-        handles=[bars, line],
-        loc="lower center",
-        bbox_to_anchor=(0.5, -0.25),
-        ncol=2,
-        frameon=False,
-        fontsize=12
-    )
-
+    plt.title(f"{symbol} Volume & Close Price", color="#111827", fontsize=16, pad=12)
+    plt.legend(handles=[bars, line], loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=12)
     plt.grid(alpha=0.25, color="#d1d5db")
     plt.tight_layout()
 
@@ -190,148 +117,26 @@ def volume_chart(symbol: str):
     return FileResponse(f"volume_chart_{symbol}.png")
 
 # -----------------------------
-# 主頁：股票選單
+# 動態對照表：將英文分類標籤轉成漂亮的中文標題
 # -----------------------------
-@app.get("/", response_class=HTMLResponse)
-def home():
-    html = """
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Silicon Sector Matrix</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #0b1120;
-            color: #e5e7eb;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        }
-        /* 背景：高級科技線條 */
-        .bg-grid {
-            position: fixed;
-            inset: 0;
-            background-image:
-                linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
-                linear-gradient(0deg, rgba(255,255,255,0.05) 1px, transparent 1px);
-            background-size: 40px 40px;
-            z-index: -1;
-        }
-        .wrap {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 60px 20px;
-            text-align: center;
-        }
-        h1 {
-            font-size: 2.6rem;
-            font-weight: 800;
-            margin-bottom: 10px;
-            background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6);
-            -webkit-background-clip: text;
-            color: transparent;
-        }
-        h3 {
-            font-size: 1.1rem;
-            color: #9ca3af;
-            margin-bottom: 40px;
-        }
-        .category-btn {
-            display: block;
-            padding: 20px 40px;
-            margin: 14px auto;
-            font-size: 1.4rem;
-            border-radius: 14px;
-            text-decoration: none;
-            background: rgba(31, 41, 55, 0.8);
-            color: #e5e7eb;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.45);
-            border: 1px solid #374151;
-            transition: 0.25s;
-            max-width: 420px;
-            backdrop-filter: blur(6px);
-        }
-        .category-btn:hover {
-            background: rgba(55, 65, 81, 0.9);
-            transform: scale(1.05);
-        }
-    </style>
-</head>
-<body>
-    <div class="bg-grid"></div>
-    <div class="wrap">
-        <h1>⚡ Silicon Sector Matrix</h1>
-        <h3>半導體 · 記憶體 · AI · 多股票智能中樞</h3>
-        <!-- 記憶體存儲分類 -->
-        <a class="category-btn" href="/category/memory">記憶體存儲 Memory</a>
-    </div>
-</body>
-</html>
-"""
-    return HTMLResponse(content=html)
-
-@app.get("/category/memory", response_class=HTMLResponse)
-def category_memory():
-    # 讀取當前 YAML 的所有股票名稱
-    from config.loader import load_stock_config
-    stock_config = load_stock_config()
-    
-    # 產生按鈕 HTML
-    buttons_html = ""
-    for symbol in stock_config.keys():
-        buttons_html += f'<a href="/dashboard/{symbol}" class="btn">{symbol} Dashboard</a>\n'
-
-    html = f"""
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Memory Stocks</title>
-    <style>
-        body {{ margin: 0; padding: 0; background: #0b1120; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; }}
-        .wrap {{ max-width: 960px; margin: 0 auto; padding: 60px 20px; }}
-        h1 {{ font-size: 2rem; margin-bottom: 10px; }}
-        h3 {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }}
-        a.btn {{ display: inline-block; padding: 18px 40px; margin: 12px; font-size: 1.4rem; border-radius: 12px; text-decoration: none; background: #1f2937; color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.2s; }}
-        a.btn:hover {{ background: #374151; transform: scale(1.05); }}
-        .back-btn {{ display: inline-block; margin-top: 40px; color: #60a5fa; text-decoration: none; font-size: 1.1rem; }}
-        .back-btn:hover {{ text-decoration: underline; }}
-    </style>
-</head>
-<body>
-    <div class="wrap">
-        <h1>記憶體存儲 Memory</h1>
-        <h3>分類：記憶體 · DRAM · NAND</h3>
-        
-        <!-- 這裡會自動塞入所有按鈕 -->
-        {buttons_html}
-        
-        <br />
-        <a href="/" class="back-btn">← 返回主矩陣</a>
-    </div>
-</body>
-</html>
-"""
-    return HTMLResponse(content=html)
+CATEGORY_NAMES = {
+    "memory": "記憶體存儲 Memory",
+    "tech": "半導體晶片 Tech / IC",
+    "storage": "硬碟與儲存 Storage",
+    "ai": "AI 與社群媒體 AI Matrix"
+}
 
 # -----------------------------
-# 整合型：深色金融風預測儀表板（完全復活版）
+# 整合型：深色金融風預測儀表板（完全復活連動版）
 # -----------------------------
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
     symbol = symbol.upper()
-    
-    # 呼叫您專案內的 AI 模型獲取原始字典數據
     result = run_prediction(symbol=symbol, return_dict=True)
 
-    # 您原版的數值四捨五入小工具
     def r(x):
         return round(x, 1) if isinstance(x, (int, float)) else x
 
-    # 100% 精準對齊您原版的 AI 字典鍵值（Key）
     current_price = r(result.get("current_price"))
     best_buy_5m = r(result.get("best_buy_5m"))
     best_sell_5m = r(result.get("best_sell_5m"))
@@ -343,7 +148,6 @@ def dashboard(symbol: str):
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp")
 
-    # 自動判定上漲/下跌箭頭邏輯
     direction_text = "持平"
     if score is not None:
         if score > 0:
@@ -351,62 +155,37 @@ def dashboard(symbol: str):
         elif score < 0:
             direction_text = "下跌 📉"
 
-    # 您原版的進度條與熱度特效參數計算
     trend_percent = max(min((score if score is not None else 0) * 100 + 50, 100), 0)
     heat_alpha = min(abs(actual if actual is not None else 0) * 5, 0.8)
 
-    # 原汁原味的深色科技風 HTML、JS 動態刷新腳本與 Matplotlib 歷史圖表嵌入
-    # ========================================================
-    # 👇 就是把這段「動態計算快捷列」加在這裡（html = f""" 的正上方）
-    # ========================================================
+    # 頂部導覽列：動態讀取 stocks.yaml 自動產生切換標籤
     from config.loader import load_stock_config
     stock_config = load_stock_config()
     links_html = ""
     for sym in stock_config.keys():
-        links_html += f'<a href="/dashboard/{sym}" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">{sym}</a>\n'
-    # ========================================================
-    
+        links_html += f'<a href="/dashboard/{sym}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{sym}</a>\n'
+
     html = f"""
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{symbol}} Prediction Dashboard</title>
+    <title>{symbol} Prediction Dashboard</title>
     <style>
-        body {{
-            margin: 0; padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #0b1120; color: #e5e7eb;
-        }}
-        .home-btn {{
-            display: inline-block; padding: 10px 18px;
-            background: #1f2937; color: #93c5fd;
-            border-radius: 8px; text-decoration: none;
-            margin-bottom: 16px; border: 1px solid #374151;
-        }}
+        body {{ margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1120; color: #e5e7eb; }}
+        .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }}
         .home-btn:hover {{ background: #374151; }}
         .container {{ max-width: 960px; margin: 0 auto; padding: 20px; }}
         .countdown {{ font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }}
         .title {{ font-size: 2rem; font-weight: 700; margin-bottom: 6px; }}
         .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }}
-        .grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 16px;
-        }}
-        .card {{
-            border-radius: 14px; padding: 18px 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.45);
-            border: 1px solid #1f2937; transition: transform 0.2s ease;
-        }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }}
+        .card {{ border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }}
         .card:hover {{ transform: scale(1.03); }}
         .card-title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }}
         .card-value {{ font-size: 1.6rem; font-weight: 600; }}
-        .trend-bar {{
-            height: 8px; border-radius: 4px; margin-top: 10px;
-            background: linear-gradient(90deg, #f44336 {trend_percent}%, #4caf50 {trend_percent}%);
-        }}
+        .trend-bar {{ height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 {trend_percent}%, #4caf50 {trend_percent}%); }}
         .heat {{ height: 10px; border-radius: 5px; margin-top: 10px; background: rgba(255, 255, 255, {heat_alpha}); }}
         .footer {{ margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }}
         .card-group-1 {{ background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); backdrop-filter: blur(6px); }}
@@ -417,18 +196,18 @@ def dashboard(symbol: str):
 </head>
 <body>
     <div class="container">
-        <!-- 自動串接我們打通的 Finnhub 動態 K 線成交量與收盤價圖表 -->
         <img src="/volume_chart/{symbol}" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
         
         <a class="home-btn" href="/">🏠 回主頁</a>
-        <div style="margin-bottom:16px;">
+        
+        <div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">
             {links_html}
         </div>
 
         <div class="title">{symbol} Prediction Dashboard</div>
         <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
-        
         <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
+
         <script>
             let sec = 60;
             setInterval(() => {{
@@ -444,13 +223,11 @@ def dashboard(symbol: str):
                     if(data.current_price) {{
                         document.getElementById("price").innerText = Number(data.current_price).toFixed(1);
                     }}
-                }} catch (e) {{
-                    console.log("更新失敗", e);
-                }}
+                }} catch (e) {{ console.log("更新失敗", e); }}
             }}
             setInterval(refreshPrice, 5000);
         </script>
-        
+
         <div class="grid">
             <div class="card card-group-1">
                 <div class="card-title">Currently Price (目前價格)</div>
@@ -488,9 +265,100 @@ def dashboard(symbol: str):
                 <div class="card-value">{est_low_full_day}</div>
             </div>
         </div>
-        <div class="footer">
-            更新時間：{ts}
-        </div>
+        <div class="footer">更新時間：{ts}</div>
+    </div>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html)
+
+# -----------------------------
+# 主頁：股票選單 (動態讀取所有分類)
+# -----------------------------
+@app.get("/", response_class=HTMLResponse)
+def home():
+    from config.loader import load_stock_config
+    stock_config = load_stock_config()
+    
+    categories_set = set()
+    for cfg in stock_config.values():
+        if "category" in cfg:
+            categories_set.add(cfg["category"])
+            
+    categories_html = ""
+    for cat in sorted(categories_set):
+        display_name = CATEGORY_NAMES.get(cat, cat.upper())
+        categories_html += f'<a class="category-btn" href="/category/{cat}">{display_name}</a>\n'
+
+    html = f"""
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Silicon Sector Matrix</title>
+    <style>
+        body {{ margin: 0; padding: 0; background: #0b1120; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+        .bg-grid {{ position: fixed; inset: 0; background-image: linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 40px 40px; z-index: -1; }}
+        .wrap {{ max-width: 960px; margin: 0 auto; padding: 60px 20px; text-align: center; }}
+        h1 {{ font-size: 2.6rem; font-weight: 800; margin-bottom: 10px; background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6); -webkit-background-clip: text; color: transparent; }}
+        h3 {{ font-size: 1.1rem; color: #9ca3af; margin-bottom: 40px; }}
+        .category-btn {{ display: block; padding: 20px 40px; margin: 14px auto; font-size: 1.4rem; border-radius: 14px; text-decoration: none; background: rgba(31, 41, 55, 0.8); color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.25s; max-width: 420px; backdrop-filter: blur(6px); }}
+        .category-btn:hover {{ background: rgba(55, 65, 81, 0.9); transform: scale(1.05); }}
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="wrap">
+        <h1>⚡ Silicon Sector Matrix</h1>
+        <h3>半導體 · 記憶體 · AI · 多股票智能中樞</h3>
+        {categories_html}
+    </div>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html)
+
+# -----------------------------
+# 分類頁面：動態路由
+# -----------------------------
+@app.get("/category/{cat_name}", response_class=HTMLResponse)
+def category_page(cat_name: str):
+    from config.loader import load_stock_config
+    stock_config = load_stock_config()
+    
+    buttons_html = ""
+    for symbol, cfg in stock_config.items():
+        if cfg.get("category") == cat_name:
+            buttons_html += f'<a href="/dashboard/{symbol}" class="btn">{symbol} Dashboard</a>\n'
+
+    title_display = CATEGORY_NAMES.get(cat_name, cat_name.upper())
+
+    html = f"""
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title_display}</title>
+    <style>
+        body {{ margin: 0; padding: 0; background: #0b1120; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; }}
+        .wrap {{ max-width: 960px; margin: 0 auto; padding: 60px 20px; }}
+        h1 {{ font-size: 2rem; margin-bottom: 10px; }}
+        h3 {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }}
+        a.btn {{ display: inline-block; padding: 18px 40px; margin: 12px; font-size: 1.4rem; border-radius: 12px; text-decoration: none; background: #1f2937; color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.2s; }}
+        a.btn:hover {{ background: #374151; transform: scale(1.05); }}
+        .back-btn {{ display: inline-block; margin-top: 40px; color: #60a5fa; text-decoration: none; font-size: 1.1rem; }}
+        .back-btn:hover {{ text-decoration: underline; }}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>{title_display}</h1>
+        <h3>多股票智能中樞分頁</h3>
+        {buttons_html}
+        <br />
+        <a href="/" class="back-btn">← 返回主矩陣</a>
     </div>
 </body>
 </html>
@@ -500,4 +368,3 @@ def dashboard(symbol: str):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
