@@ -37,14 +37,21 @@ def predict_symbol(symbol: str):
 def volume_chart(symbol: str):
     symbol = symbol.upper()
     
-    # 這是標準且正確的 Finnhub K線 API 網址
-    url = f"https://finnhub.io{symbol}&resolution=D&count=30&token={FINNHUB_API_KEY}"
+    # 改用 params 字典傳參，交由 requests 自動建立網址，百分之百不會再解析出錯！
+    base_url = "https://finnhub.io"
+    query_params = {
+        "symbol": symbol,
+        "resolution": "D",
+        "count": 30,
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
+    }
     
-    r = requests.get(url)
+    # 讓套件自動生成網址並發出請求
+    r = requests.get(base_url, params=query_params)
     data = r.json()
 
-    # 預防 Finnhub 沒有回傳資料導致後續陣列切片崩潰
-    if "t" not in data:
+    # 確保 Finnhub 有回傳正確數據，避免切片崩潰
+    if "t" not in data or not data["t"]:
         return {"error": f"No data returned from Finnhub for {symbol}", "api_response": data}
 
     ts = data["t"][-15:]
@@ -97,14 +104,13 @@ def volume_chart(symbol: str):
         markeredgecolor="#111827",
         zorder=3,
         label="Close Price (收盤價)"
-    )[0]
+    )[0]  # 加上 [0] 確保後續 legend 控制正常
 
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
 
     # -----------------------------
     # 資料標籤（每個點標上成交量 & 收盤價）
     # -----------------------------
-    # Bar 標籤（成交量）
     for i, v in enumerate(volumes):
         ax1.text(
             i,
@@ -116,7 +122,6 @@ def volume_chart(symbol: str):
             color="#065f46"
         )
 
-    # Line 標籤（收盤價）
     for i, c in enumerate(closes):
         ax2.text(
             i,
@@ -137,7 +142,7 @@ def volume_chart(symbol: str):
         ])
 
     # -----------------------------
-    # 標題
+    # 標題與圖例
     # -----------------------------
     plt.title(
         f"{symbol} Volume & Close Price",
@@ -146,9 +151,6 @@ def volume_chart(symbol: str):
         pad=12
     )
 
-    # -----------------------------
-    # 圖例（放到整張圖的最下方，左右並排）
-    # -----------------------------
     plt.legend(
         handles=[bars, line],
         loc="lower center",
