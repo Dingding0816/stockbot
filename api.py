@@ -1,6 +1,7 @@
-import os  # 請確保檔案最上方有 import os，如果沒有請在最上方補上
-import yfinance as yf  # 導入完全免費的 Yahoo Finance 庫
+import os
 import requests
+import matplotlib
+matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式，解決 savefig 崩潰
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
 from datetime import datetime
