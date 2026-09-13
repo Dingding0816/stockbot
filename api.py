@@ -98,7 +98,7 @@ def volume_chart(symbol: str):
         alpha=0.45,
         width=0.55,
         zorder=2,
-        label="Volume (成交量)"
+        label="Volume"
     )
 
     import matplotlib.ticker as ticker
@@ -124,7 +124,7 @@ def volume_chart(symbol: str):
         markerfacecolor="#c4b5fd",
         markeredgecolor="#111827",
         zorder=3,
-        label="Close Price (收盤價)"
+        label="Close Price"
     )[0]  # 確保解構正確
 
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
