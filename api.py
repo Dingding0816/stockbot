@@ -1,3 +1,4 @@
+from agent import router as agent_router
 from fastapi import FastAPI
 from config.loader import load_stock_config
 
@@ -7,6 +8,8 @@ from models.memory_model import MemoryModel
 from models.tech_model import TechModel
 
 app = FastAPI()
+
+app.include_router(agent_router)
 
 # 讀取 stocks.yaml
 STOCK_CONFIG = load_stock_config()
