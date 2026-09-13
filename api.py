@@ -144,7 +144,7 @@ def volume_chart(symbol: str):
     ax1.tick_params(axis="x", colors="#111827", rotation=45, labelsize=11)
 
     ax2 = ax1.twinx()
-line, = ax2.plot(dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
+    line, = ax2.plot(dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
                  markerfacecolor="#c4b5fd", markeredgecolor="#111827", zorder=3, label="Close Price")
 
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
