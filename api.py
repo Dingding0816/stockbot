@@ -41,18 +41,17 @@ def predict_symbol(symbol: str):
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
-    img_filename = f"volume_chart_{symbol}.png"
     
-    # ---------------------------------------------------------
-    # 💡 【智慧快取機制】如果 6 小時內（21600秒）已經畫過這支股票的圖了，直接回傳，不再戳 API！
-    # ---------------------------------------------------------
+    # 💡 【終極修正】將圖片儲存路徑強制指定到 Linux 雲端專用的 /tmp 開放安全暫存區，徹底解決 Render 磁碟寫入權限死鎖！
+    img_filename = f"/tmp/volume_chart_{symbol}.png"
+    
+    # 1. 智慧快取機制：6小時內有圖就直接秒回
     if os.path.exists(img_filename):
         file_age = time.time() - os.path.getmtime(img_filename)
-        if file_age < 21600:  # 6 小時以內
+        if file_age < 21600:
             return FileResponse(img_filename)
 
-    # 如果超過 6 小時或檔案不存在，才去向 Finnhub 伸手要資料
-    base_url = "https://finnhub.io"
+    base_url = "https://finnhub.io/api/v1/stock/candle"
     current_time = int(time.time())
     thirty_days_ago = current_time - (30 * 24 * 60 * 60)
     
@@ -64,63 +63,73 @@ def volume_chart(symbol: str):
         "token": FINNHUB_API_KEY
     }
     
+    has_data = False
+    data = {}
+    
     try:
         r = requests.get(base_url, params=query_params, timeout=5)
-        # 如果爆流量 (429) 或出錯，但本機有舊圖，就先拿舊圖頂替，絕對不破圖！
-        if r.status_code != 200 and os.path.exists(img_filename):
-            return FileResponse(img_filename)
-            
-        data = r.json()
+        if r.status_code == 200:
+            data = r.json()
+            if "t" in data and data["t"] and len(data["t"]) > 0:
+                has_data = True
     except Exception:
-        # 發生任何連線崩潰，只要有舊圖就回傳舊圖避難
-        if os.path.exists(img_filename):
-            return FileResponse(img_filename)
-        return {"error": "Finnhub API 暫時無法連線，且本機無快取圖片"}
+        pass
 
-    # 驗證資料有效性
-    if "t" not in data or not data["t"]:
-        if os.path.exists(img_filename):
-            return FileResponse(img_filename)
-        return {"error": f"No data returned from Finnhub for {symbol}"}
-
-    # ---- 以下維持原本的 Matplotlib 繪圖邏輯（100%不變） ----
-    ts = data["t"][-15:]
-    volumes = data["v"][-15:]
-    closes = data["c"][-15:]
-    dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
-
+    # ---------------------------------------------------------
+    # 🎨 繪圖邏輯
+    # ---------------------------------------------------------
     plt.figure(figsize=(12, 5))
     ax1 = plt.gca()
-    ax1.set_facecolor("#f3f4f6")
-    plt.rcParams['axes.edgecolor'] = "#111827"
-    plt.rcParams['axes.linewidth'] = 1.2
+    
+    if has_data:
+        # ======= 狀況 A：有資料，畫歷史成交量與收盤價 =======
+        ax1.set_facecolor("#f3f4f6")
+        plt.rcParams['axes.edgecolor'] = "#111827"
+        plt.rcParams['axes.linewidth'] = 1.2
 
-    bars = ax1.bar(dates, volumes, color="#4ade80", alpha=0.45, width=0.55, zorder=2, label="Volume")
+        ts = data["t"][-15:]
+        volumes = data["v"][-15:]
+        closes = data["c"][-15:]
+        dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
 
-    import matplotlib.ticker as ticker
-    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M"))
-    ax1.tick_params(axis="y", colors="#111827", labelsize=11)
-    ax1.tick_params(axis="x", colors="#111827", rotation=45, labelsize=11)
+        bars = ax1.bar(dates, volumes, color="#4ade80", alpha=0.45, width=0.55, zorder=2, label="Volume")
 
-    ax2 = ax1.twinx()
-    line = ax2.plot(dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
-                    markerfacecolor="#c4b5fd", markeredgecolor="#111827", zorder=3, label="Close Price")
+        import matplotlib.ticker as ticker
+        ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M"))
+        ax1.tick_params(axis="y", colors="#111827", labelsize=11)
+        ax1.tick_params(axis="x", colors="#111827", rotation=45, labelsize=11)
 
-    ax2.tick_params(axis="y", colors="#111827", labelsize=11)
+        ax2 = ax1.twinx()
+        line = ax2.plot(dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
+                        markerfacecolor="#c4b5fd", markeredgecolor="#111827", zorder=3, label="Close Price")
+        ax2.tick_params(axis="y", colors="#111827", labelsize=11)
 
-    for i, v in enumerate(volumes):
-        ax1.text(i, v, f"{v/1_000_000:.1f}M", ha="center", va="bottom", fontsize=9, color="#065f46")
-    for i, c in enumerate(closes):
-        ax2.text(i, c, f"{c:.1f}", ha="center", va="bottom", fontsize=9, color="#4c1d95")
+        for i, v in enumerate(volumes):
+            ax1.text(i, v, f"{v/1_000_000:.1f}M", ha="center", va="bottom", fontsize=9, color="#065f46")
+        for i, c in enumerate(closes):
+            ax2.text(i, c, f"{c:.1f}", ha="center", va="bottom", fontsize=9, color="#4c1d95")
 
-    for spine in ax1.spines.values():
-        spine.set_path_effects([patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)])
+        for spine in ax1.spines.values():
+            spine.set_path_effects([patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)])
 
-    plt.title(f"{symbol} Volume & Close Price", color="#111827", fontsize=16, pad=12)
-    plt.legend(handles=[bars, line[0]], loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=12)
-    plt.grid(alpha=0.25, color="#d1d5db")
+        plt.title(f"{symbol} Volume & Close Price", color="#111827", fontsize=16, pad=12)
+        plt.legend(handles=[bars, line], loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=12)
+        plt.grid(alpha=0.25, color="#d1d5db")
+        
+    else:
+        # ======= 狀況 B：無資料，畫深色質感提示面板 =======
+        ax1.set_facecolor("#111827")
+        ax1.get_xaxis().set_visible(False)
+        ax1.get_yaxis().set_visible(False)
+        plt.rcParams['axes.edgecolor'] = "#374151"
+        
+        plt.text(0.5, 0.6, f"{symbol} Historical Chart", ha="center", va="center", fontsize=18, color="#ffffff", fontweight="bold")
+        plt.text(0.5, 0.4, "Finnhub Free Plan: No Data Available For This Stock", ha="center", va="center", fontsize=12, color="#9ca3af")
+        plt.title(f"{symbol} - Dashboard Status", color="#ffffff", fontsize=14, pad=12)
+
     plt.tight_layout()
-
+    
+    # 儲存至開放權限的暫存資料夾
     plt.savefig(img_filename, dpi=150)
     plt.close()
 
