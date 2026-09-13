@@ -40,9 +40,10 @@ def dashboard_page(request: Request, symbol: str):
     if symbol not in MODEL_REGISTRY:
         return {"error": f"Symbol {symbol} not supported"}
 
+    # 使用明確的關鍵字指定參數，防止 FastAPI 版本不同導致傳參對調崩潰
     return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "symbol": symbol}
+        name="dashboard.html",
+        context={"request": request, "symbol": symbol}
     )
 
 @app.get("/api/predict/{symbol}")
