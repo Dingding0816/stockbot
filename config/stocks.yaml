@@ -33,7 +33,7 @@ META:
   display_name: Meta Platforms
   category: "ai"               # 新增這行：AI / 社群媒體
 
-  ATEYY:
+ATEYY:
   model_type: tech
   data_source: finnhub
   refresh_interval: 60
