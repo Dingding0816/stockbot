@@ -351,121 +351,177 @@ def category_memory():
     return HTMLResponse(content=html)
 
 # -----------------------------
-# 整合型：深色金融風預測儀表板
+# 整合型：深色金融風預測儀表板（完全復活版）
 # -----------------------------
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
-def dashboard_page(symbol: str):
+def dashboard(symbol: str):
     symbol = symbol.upper()
     
-    # 1. 呼叫您專案內的 AI 模型獲取數據
-    try:
-        pred_data = run_prediction(symbol=symbol, return_dict=True)
-    except Exception:
-        # 如果模型預測失敗，給予一組預設安全數值防止網頁崩潰
-        pred_data = {
-            "current_price": 975.3, "direction": "持平",
-            "buy_5m": 1015.6, "sell_5m": 1017.6,
-            "high_15m": 1024.3, "low_15m": 1010.0,
-            "high_day": 1030.2, "low_day": 1004.8
-        }
+    # 呼叫您專案內的 AI 模型獲取原始字典數據
+    result = run_prediction(symbol=symbol, return_dict=True)
 
-    # 2. 建立您要的深色金融風 HTML 面板
-    html_content = f"""
+    # 您原版的數值四捨五入小工具
+    def r(x):
+        return round(x, 1) if isinstance(x, (int, float)) else x
+
+    # 100% 精準對齊您原版的 AI 字典鍵值（Key）
+    current_price = r(result.get("current_price"))
+    best_buy_5m = r(result.get("best_buy_5m"))
+    best_sell_5m = r(result.get("best_sell_5m"))
+    est_high15 = r(result.get("true_high15"))
+    est_low15 = r(result.get("true_low15"))
+    est_high_full_day = r(result.get("true_high_full"))
+    est_low_full_day = r(result.get("true_low_full"))
+    score = r(result.get("predicted_score"))
+    actual = r(result.get("actual_result"))
+    ts = result.get("timestamp")
+
+    # 自動判定上漲/下跌箭頭邏輯
+    direction_text = "持平"
+    if score is not None:
+        if score > 0:
+            direction_text = "上漲 📈"
+        elif score < 0:
+            direction_text = "下跌 📉"
+
+    # 您原版的進度條與熱度特效參數計算
+    trend_percent = max(min((score if score is not None else 0) * 100 + 50, 100), 0)
+    heat_alpha = min(abs(actual if actual is not None else 0) * 5, 0.8)
+
+    # 原汁原味的深色科技風 HTML、JS 動態刷新腳本與 Matplotlib 歷史圖表嵌入
+    html = f"""
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{symbol} Prediction Dashboard</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{symbol}} Prediction Dashboard</title>
     <style>
         body {{
-            background-color: #0b1120;
-            color: #e5e7eb;
+            margin: 0; padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            margin: 0; padding: 20px;
+            background: #0b1120; color: #e5e7eb;
         }}
-        .header {{ margin-bottom: 20px; }}
-        .header h1 {{ font-size: 2.2rem; margin: 0; color: #fff; }}
-        .header p {{ color: #9ca3af; margin: 5px 0 0 0; }}
+        .home-btn {{
+            display: inline-block; padding: 10px 18px;
+            background: #1f2937; color: #93c5fd;
+            border-radius: 8px; text-decoration: none;
+            margin-bottom: 16px; border: 1px solid #374151;
+        }}
+        .home-btn:hover {{ background: #374151; }}
+        .container {{ max-width: 960px; margin: 0 auto; padding: 20px; }}
+        .countdown {{ font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }}
+        .title {{ font-size: 2rem; font-weight: 700; margin-bottom: 6px; }}
+        .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }}
         .grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px; margin-bottom: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
         }}
         .card {{
-            background: rgba(31, 41, 55, 0.6);
-            border: 1px solid #374151;
-            border-radius: 16px; padding: 20px;
-            box-shadow: 0 10px 15px rgba(0,0,0,0.3);
-            backdrop-filter: blur(8px);
+            border-radius: 14px; padding: 18px 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+            border: 1px solid #1f2937; transition: transform 0.2s ease;
         }}
-        .card .title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 10px; }}
-        .card .value {{ font-size: 2rem; font-weight: bold; color: #ffffff; }}
-        .green-text {{ color: #34d399 !important; }}
-        .blue-text {{ color: #60a5fa !important; }}
-        .purple-text {{ color: #a78bfa !important; }}
-        .orange-text {{ color: #fb923c !important; }}
-        .chart-container {{
-            background: rgba(31, 41, 55, 0.6);
-            border: 1px solid #374151;
-            border-radius: 16px; padding: 20px;
-            text-align: center;
+        .card:hover {{ transform: scale(1.03); }}
+        .card-title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }}
+        .card-value {{ font-size: 1.6rem; font-weight: 600; }}
+        .trend-bar {{
+            height: 8px; border-radius: 4px; margin-top: 10px;
+            background: linear-gradient(90deg, #f44336 {trend_percent}%, #4caf50 {trend_percent}%);
         }}
-        .chart-img {{ max-width: 100%; height: auto; border-radius: 8px; }}
-        .back-link {{ display: inline-block; margin-bottom: 20px; color: #60a5fa; text-decoration: none; }}
-        .back-link:hover {{ text-decoration: underline; }}
+        .heat {{ height: 10px; border-radius: 5px; margin-top: 10px; background: rgba(255, 255, 255, {heat_alpha}); }}
+        .footer {{ margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }}
+        .card-group-1 {{ background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); backdrop-filter: blur(6px); }}
+        .card-group-2 {{ background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); backdrop-filter: blur(6px); }}
+        .card-group-3 {{ background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); backdrop-filter: blur(6px); }}
+        .card-group-4 {{ background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); backdrop-filter: blur(6px); }}
     </style>
 </head>
 <body>
-    <a href="/category/memory" class="back-link">← 返回選單</a>
-    
-    <div class="header">
-        <h1>{symbol} Prediction Dashboard</h1>
-        <p>深色金融風 · 即時更新 · 手機優化</p>
-    </div>
+    <div class="container">
+        <!-- 自動串接我們打通的 Finnhub 動態 K 線成交量與收盤價圖表 -->
+        <img src="/volume_chart/{symbol}" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
+        
+        <a class="home-btn" href="/">🏠 回主頁</a>
+        <div style="margin-bottom:16px;">
+            <a href="/dashboard/MU" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">MU</a>
+            <a href="/dashboard/SNDK" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">SNDK</a>
+            <a href="/dashboard/MXL" style="color:#93c5fd;text-decoration:none;font-weight:bold;">MXL</a>
+        </div>
+        <div class="title">{symbol} Prediction Dashboard</div>
+        <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
+        
+        <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
+        <script>
+            let sec = 60;
+            setInterval(() => {{
+                sec--;
+                if (sec <= 0) sec = 60;
+                document.getElementById('count').innerText = sec;
+            }}, 1000);
 
-    <!-- 數據卡片區塊 -->
-    <div class="grid">
-        <div class="card">
-            <div class="title">目前價格</div>
-            <div class="value blue-text">{pred_data.get('current_price', pred_data.get('current', 'N/A'))}</div>
+            async function refreshPrice() {{
+                try {{
+                    let res = await fetch("/predict/{symbol}");
+                    let data = await res.json();
+                    if(data.current_price) {{
+                        document.getElementById("price").innerText = Number(data.current_price).toFixed(1);
+                    }}
+                }} catch (e) {{
+                    console.log("更新失敗", e);
+                }}
+            }}
+            setInterval(refreshPrice, 5000);
+        </script>
+        
+        <div class="grid">
+            <div class="card card-group-1">
+                <div class="card-title">Currently Price (目前價格)</div>
+                <div class="card-value" id="price">{current_price}</div>
+                <div class="trend-bar"></div>
+            </div>
+            <div class="card card-group-1">
+                <div class="card-title">Direction (預估方向)</div>
+                <div class="card-value">{direction_text}</div>
+            </div>
+            <div class="card card-group-2">
+                <div class="card-title">5M Best Buy (5分鐘最佳買入價)</div>
+                <div class="card-value">{best_buy_5m}</div>
+                <div class="heat"></div>
+            </div>
+            <div class="card card-group-2">
+                <div class="card-title">5M Best Sell (5分鐘最佳賣出價)</div>
+                <div class="card-value">{best_sell_5m}</div>
+                <div class="heat"></div>
+            </div>
+            <div class="card card-group-3">
+                <div class="card-title">15M Est High (15分鐘預估最高價)</div>
+                <div class="card-value">{est_high15}</div>
+            </div>
+            <div class="card card-group-3">
+                <div class="card-title">15M Est Low (15分鐘預估最低價)</div>
+                <div class="card-value">{est_low15}</div>
+            </div>
+            <div class="card card-group-4">
+                <div class="card-title">Full Day Est High (整天預估最高價)</div>
+                <div class="card-value">{est_high_full_day}</div>
+            </div>
+            <div class="card card-group-4">
+                <div class="card-title">Full Day Est Low (整天預估最低價)</div>
+                <div class="card-value">{est_low_full_day}</div>
+            </div>
         </div>
-        <div class="card">
-            <div class="title">預估方向</div>
-            <div class="value">{pred_data.get('direction', '持平')}</div>
+        <div class="footer">
+            更新時間：{ts}
         </div>
-        <div class="card">
-            <div class="title">5 分鐘最佳買入價</div>
-            <div class="value green-text">{pred_data.get('buy_5m', 'N/A')}</div>
-        </div>
-        <div class="card">
-            <div class="title">5 分鐘最佳賣出價</div>
-            <div class="value green-text">{pred_data.get('sell_5m', 'N/A')}</div>
-        </div>
-        <div class="card">
-            <div class="title">15 分鐘最高價</div>
-            <div class="value purple-text">{pred_data.get('high_15m', 'N/A')}</div>
-        </div>
-        <div class="card">
-            <div class="title">15 分鐘最低價</div>
-            <div class="value purple-text">{pred_data.get('low_15m', 'N/A')}</div>
-        </div>
-        <div class="card">
-            <div class="title">全日預估最高價</div>
-            <div class="value orange-text">{pred_data.get('high_day', 'N/A')}</div>
-        </div>
-        <div class="card">
-            <div class="title">全日預估最低價</div>
-            <div class="value orange-text">{pred_data.get('low_day', 'N/A')}</div>
-        </div>
-    </div>
-
-    <!-- 歷史圖表區塊：直接嵌入我們剛剛做好的 volume_chart API 圖片 -->
-    <div class="chart-container">
-        <h3 style="margin-top:0; text-align:left;">歷史成交量 & 收盤價趨勢</h3>
-        <img src="/volume_chart/{symbol}" class="chart-img" alt="Stock Chart">
     </div>
 </body>
 </html>
 """
-    return HTMLResponse(content=html_content)
+    return HTMLResponse(content=html)
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
