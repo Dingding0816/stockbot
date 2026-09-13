@@ -349,18 +349,27 @@ def dashboard(symbol: str):
     return HTMLResponse(content=final_html)
 
 # -----------------------------
-# 主頁：股票選單 (動態讀取所有分類)
+# 主頁：股票選單 (動態讀取所有分類 + 新增智慧下拉搜尋盒)
 # -----------------------------
 @app.get("/", response_class=HTMLResponse)
 def home():
     from config.loader import load_stock_config
     stock_config = load_stock_config()
     
+    # 1. 自動收集 stocks.yaml 裡出現過的所有不重複分類與股票代號
     categories_set = set()
-    for cfg in stock_config.values():
+    search_options_html = ""
+    
+    for symbol, cfg in stock_config.items():
+        symbol = symbol.upper()
         if "category" in cfg:
             categories_set.add(cfg["category"])
+        
+        # 產生下拉選單的選項 (顯示格式: MU - Micron Technology)
+        display_name = cfg.get("display_name", symbol)
+        search_options_html += f'<option value="{symbol}">{symbol} - {display_name}</option>\n'
             
+    # 2. 自動生成首頁的分類大按鈕
     categories_html = ""
     for cat in sorted(categories_set):
         display_name = CATEGORY_NAMES.get(cat, cat.upper())
@@ -378,7 +387,26 @@ def home():
         .bg-grid {{ position: fixed; inset: 0; background-image: linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 40px 40px; z-index: -1; }}
         .wrap {{ max-width: 960px; margin: 0 auto; padding: 60px 20px; text-align: center; }}
         h1 {{ font-size: 2.6rem; font-weight: 800; margin-bottom: 10px; background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6); -webkit-background-clip: text; color: transparent; }}
-        h3 {{ font-size: 1.1rem; color: #9ca3af; margin-bottom: 40px; }}
+        h3 {{ font-size: 1.1rem; color: #9ca3af; margin-bottom: 30px; }}
+        
+        /* 🔍 智慧搜尋盒專用深色科技風樣式 */
+        .search-container {{
+            max-width: 420px; margin: 0 auto 40px auto; display: flex; gap: 10px;
+            background: rgba(31, 41, 55, 0.5); padding: 8px 12px; border-radius: 12px;
+            border: 1px solid #4b5563; backdrop-filter: blur(6px); box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }}
+        .search-input {{
+            flex: 1; background: transparent; border: none; color: #ffffff;
+            font-size: 1.1rem; padding: 8px; outline: none;
+        }}
+        .search-input::placeholder {{ color: #6b7280; }}
+        .search-btn {{
+            background: linear-gradient(135deg, #3b82f6, #6366f1); color: white;
+            border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold;
+            cursor: pointer; transition: 0.2s; font-size: 1rem;
+        }}
+        .search-btn:hover {{ transform: scale(1.03); filter: brightness(1.1); }}
+        
         .category-btn {{ display: block; padding: 20px 40px; margin: 14px auto; font-size: 1.4rem; border-radius: 14px; text-decoration: none; background: rgba(31, 41, 55, 0.8); color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.25s; max-width: 420px; backdrop-filter: blur(6px); }}
         .category-btn:hover {{ background: rgba(55, 65, 81, 0.9); transform: scale(1.05); }}
     </style>
@@ -388,6 +416,38 @@ def home():
     <div class="wrap">
         <h1>⚡ Silicon Sector Matrix</h1>
         <h3>半導體 · 記憶體 · AI · 多股票智能中樞</h3>
+        
+        <!-- 🔍 智慧搜尋盒區塊 -->
+        <div class="search-container">
+            <input type="text" id="stockSearch" class="search-input" list="stockList" placeholder="輸入關鍵字或選擇股票... (EX: MU)" onkeypress="handleKeyPress(event)">
+            <datalist id="stockList">
+                {search_options_html}
+            </datalist>
+            <button class="search-btn" onclick="goToDashboard()">直達 ➔</button>
+        </div>
+
+        <script>
+            // 點擊「直達」按鈕的導向邏輯
+            function goToDashboard() {{
+                let inputVal = document.getElementById("stockSearch").value.trim().toUpperCase();
+                if (inputVal) {{
+                    // 如果使用者選擇了帶有說明的選項，切出最前面的股票代號 (例如從 "MU - Micron" 切出 "MU")
+                    let symbol = inputVal.split(" ")[0];
+                    window.location.href = "/dashboard/" + symbol;
+                }} else {{
+                    alert("請先輸入或選擇一個股票代號喔！");
+                }}
+            }}
+
+            // 支援按下 Enter 鍵直接直達
+            function handleKeyPress(event) {{
+                if (event.key === "Enter") {{
+                    goToDashboard();
+                }}
+            }}
+        </script>
+        
+        <!-- 分類大按鈕區塊 -->
         {categories_html}
     </div>
 </body>
