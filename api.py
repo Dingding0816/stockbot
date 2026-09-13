@@ -1,3 +1,4 @@
+import os  # 請確保檔案最上方有 import os，如果沒有請在最上方補上
 import requests
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
@@ -40,11 +41,21 @@ def predict_symbol(symbol: str):
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
+    img_filename = f"volume_chart_{symbol}.png"
     
+    # ---------------------------------------------------------
+    # 💡 【智慧快取機制】如果 6 小時內（21600秒）已經畫過這支股票的圖了，直接回傳，不再戳 API！
+    # ---------------------------------------------------------
+    if os.path.exists(img_filename):
+        file_age = time.time() - os.path.getmtime(img_filename)
+        if file_age < 21600:  # 6 小時以內
+            return FileResponse(img_filename)
+
+    # 如果超過 6 小時或檔案不存在，才去向 Finnhub 伸手要資料
+    base_url = "https://finnhub.io"
     current_time = int(time.time())
     thirty_days_ago = current_time - (30 * 24 * 60 * 60)
     
-    base_url = "https://finnhub.io"
     query_params = {
         "symbol": symbol,
         "resolution": "D",
@@ -53,53 +64,52 @@ def volume_chart(symbol: str):
         "token": FINNHUB_API_KEY
     }
     
-    r = requests.get(base_url, params=query_params)
-    
-    if r.status_code != 200:
-        return {"error": "Finnhub API 錯誤", "status_code": r.status_code, "message": r.text}
-    
     try:
+        r = requests.get(base_url, params=query_params, timeout=5)
+        # 如果爆流量 (429) 或出錯，但本機有舊圖，就先拿舊圖頂替，絕對不破圖！
+        if r.status_code != 200 and os.path.exists(img_filename):
+            return FileResponse(img_filename)
+            
         data = r.json()
-    except Exception as e:
-        return {"error": "Finnhub 沒有回傳正確的 JSON 格式資料", "finnhub_raw_text": r.text}
+    except Exception:
+        # 發生任何連線崩潰，只要有舊圖就回傳舊圖避難
+        if os.path.exists(img_filename):
+            return FileResponse(img_filename)
+        return {"error": "Finnhub API 暫時無法連線，且本機無快取圖片"}
 
+    # 驗證資料有效性
     if "t" not in data or not data["t"]:
-        return {"error": f"No data returned from Finnhub for {symbol}", "api_response": data}
+        if os.path.exists(img_filename):
+            return FileResponse(img_filename)
+        return {"error": f"No data returned from Finnhub for {symbol}"}
 
+    # ---- 以下維持原本的 Matplotlib 繪圖邏輯（100%不變） ----
     ts = data["t"][-15:]
     volumes = data["v"][-15:]
     closes = data["c"][-15:]
     dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
 
     plt.figure(figsize=(12, 5))
-
-    # 左軸：成交量
     ax1 = plt.gca()
     ax1.set_facecolor("#f3f4f6")
     plt.rcParams['axes.edgecolor'] = "#111827"
     plt.rcParams['axes.linewidth'] = 1.2
 
-    bars = ax1.bar(
-        dates, volumes, color="#4ade80", alpha=0.45, width=0.55, zorder=2, label="Volume"
-    )
+    bars = ax1.bar(dates, volumes, color="#4ade80", alpha=0.45, width=0.55, zorder=2, label="Volume")
 
     import matplotlib.ticker as ticker
     ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x/1_000_000:.1f}M"))
     ax1.tick_params(axis="y", colors="#111827", labelsize=11)
     ax1.tick_params(axis="x", colors="#111827", rotation=45, labelsize=11)
 
-    # 右軸：收盤價
     ax2 = ax1.twinx()
-    line = ax2.plot(
-        dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
-        markerfacecolor="#c4b5fd", markeredgecolor="#111827", zorder=3, label="Close Price"
-    )[0]
+    line = ax2.plot(dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
+                    markerfacecolor="#c4b5fd", markeredgecolor="#111827", zorder=3, label="Close Price")
 
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
 
     for i, v in enumerate(volumes):
         ax1.text(i, v, f"{v/1_000_000:.1f}M", ha="center", va="bottom", fontsize=9, color="#065f46")
-
     for i, c in enumerate(closes):
         ax2.text(i, c, f"{c:.1f}", ha="center", va="bottom", fontsize=9, color="#4c1d95")
 
@@ -107,14 +117,14 @@ def volume_chart(symbol: str):
         spine.set_path_effects([patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)])
 
     plt.title(f"{symbol} Volume & Close Price", color="#111827", fontsize=16, pad=12)
-    plt.legend(handles=[bars, line], loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=12)
+    plt.legend(handles=[bars, line[0]], loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=12)
     plt.grid(alpha=0.25, color="#d1d5db")
     plt.tight_layout()
 
-    plt.savefig(f"volume_chart_{symbol}.png", dpi=150)
+    plt.savefig(img_filename, dpi=150)
     plt.close()
 
-    return FileResponse(f"volume_chart_{symbol}.png")
+    return FileResponse(img_filename)
 
 # -----------------------------
 # 動態對照表：將英文分類標籤轉成漂亮的中文標題
