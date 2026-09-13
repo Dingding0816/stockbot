@@ -37,7 +37,6 @@ def predict_symbol(symbol: str):
 def volume_chart(symbol: str):
     symbol = symbol.upper()
     
-    # 改用 params 字典傳參，交由 requests 自動建立網址，百分之百不會再解析出錯！
     base_url = "https://finnhub.io"
     query_params = {
         "symbol": symbol,
@@ -46,9 +45,23 @@ def volume_chart(symbol: str):
         "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
     }
     
-    # 讓套件自動生成網址並發出請求
     r = requests.get(base_url, params=query_params)
-    data = r.json()
+    
+    # 【新增安全檢查】如果 Finnhub 回傳的不是 200 成功，或者不是 JSON，就把原因顯示在網頁上
+    if r.status_code != 200:
+        return {
+            "error": "Finnhub API 錯誤", 
+            "status_code": r.status_code, 
+            "message": r.text
+        }
+    
+    try:
+        data = r.json()
+    except Exception as e:
+        return {
+            "error": "Finnhub 沒有回傳正確的 JSON 格式資料", 
+            "finnhub_raw_text": r.text
+        }
 
     # 確保 Finnhub 有回傳正確數據，避免切片崩潰
     if "t" not in data or not data["t"]:
