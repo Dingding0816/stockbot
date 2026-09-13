@@ -146,7 +146,7 @@ CATEGORY_NAMES = {
 }
 
 # -----------------------------
-# 整合型：深色金融風預測儀表板（完全復活連動版）
+# 整合型：深色金融風預測儀表板（安全字串替換版）
 # -----------------------------
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
@@ -184,112 +184,129 @@ def dashboard(symbol: str):
     for sym in stock_config.keys():
         links_html += f'<a href="/dashboard/{sym}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{sym}</a>\n'
 
-    html = f"""
+    # 使用標準 HTML 原始碼，不使用容易出錯的 f-string 大括號
+    raw_html = """
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{symbol} Prediction Dashboard</title>
+    <title>__SYMBOL__ Prediction Dashboard</title>
     <style>
-        body {{ margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1120; color: #e5e7eb; }}
-        .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }}
-        .home-btn:hover {{ background: #374151; }}
-        .container {{ max-width: 960px; margin: 0 auto; padding: 20px; }}
-        .countdown {{ font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }}
-        .title {{ font-size: 2rem; font-weight: 700; margin-bottom: 6px; }}
-        .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }}
-        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }}
-        .card {{ border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }}
-        .card:hover {{ transform: scale(1.03); }}
-        .card-title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }}
-        .card-value {{ font-size: 1.6rem; font-weight: 600; }}
-        .trend-bar {{ height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 {trend_percent}%, #4caf50 {trend_percent}%); }}
-        .heat {{ height: 10px; border-radius: 5px; margin-top: 10px; background: rgba(255, 255, 255, {heat_alpha}); }}
-        .footer {{ margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }}
-        .card-group-1 {{ background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); backdrop-filter: blur(6px); }}
-        .card-group-2 {{ background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); backdrop-filter: blur(6px); }}
-        .card-group-3 {{ background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); backdrop-filter: blur(6px); }}
-        .card-group-4 {{ background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); backdrop-filter: blur(6px); }}
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1120; color: #e5e7eb; }
+        .home-btn { display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }
+        .home-btn:hover { background: #374151; }
+        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+        .countdown { font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }
+        .title { font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
+        .subtitle { font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+        .card { border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }
+        .card:hover { transform: scale(1.03); }
+        .card-title { font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }
+        .card-value { font-size: 1.6rem; font-weight: 600; }
+        .trend-bar { height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 __TREND_PERCENT__%, #4caf50 __TREND_PERCENT__%); }
+        .heat { height: 10px; border-radius: 5px; margin-top: 10px; background: rgba(255, 255, 255, __HEAT_ALPHA__); }
+        .footer { margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }
+        .card-group-1 { background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); backdrop-filter: blur(6px); }
+        .card-group-2 { background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); backdrop-filter: blur(6px); }
+        .card-group-3 { background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); backdrop-filter: blur(6px); }
+        .card-group-4 { background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); backdrop-filter: blur(6px); }
     </style>
 </head>
 <body>
     <div class="container">
-        <img src="/volume_chart/{symbol}" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
+        <!-- 橫跨整張網頁的精美歷史圖表，完美安置在最上方 -->
+        <img src="/volume_chart/__SYMBOL__" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
         
         <a class="home-btn" href="/">🏠 回主頁</a>
         
         <div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">
-            {links_html}
+            __LINKS_HTML__
         </div>
 
-        <div class="title">{symbol} Prediction Dashboard</div>
+        <div class="title">__SYMBOL__ Prediction Dashboard</div>
         <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
         <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
 
         <script>
             let sec = 60;
-            setInterval(() => {{
+            setInterval(() => {
                 sec--;
                 if (sec <= 0) sec = 60;
                 document.getElementById('count').innerText = sec;
-            }}, 1000);
+            }, 1000);
 
-            async function refreshPrice() {{
-                try {{
-                    let res = await fetch("/predict/{symbol}");
+            async function refreshPrice() {
+                try {
+                    let res = await fetch("/predict/__SYMBOL__");
                     let data = await res.json();
-                    if(data.current_price) {{
+                    if(data.current_price) {
                         document.getElementById("price").innerText = Number(data.current_price).toFixed(1);
-                    }}
-                }} catch (e) {{ console.log("更新失敗", e); }}
-            }}
+                    }
+                } catch (e) { console.log("更新失敗", e); }
+            }
             setInterval(refreshPrice, 5000);
         </script>
 
         <div class="grid">
             <div class="card card-group-1">
                 <div class="card-title">Currently Price (目前價格)</div>
-                <div class="card-value" id="price">{current_price}</div>
+                <div class="card-value" id="price">__CURRENT_PRICE__</div>
                 <div class="trend-bar"></div>
             </div>
             <div class="card card-group-1">
                 <div class="card-title">Direction (預估方向)</div>
-                <div class="card-value">{direction_text}</div>
+                <div class="card-value">__DIRECTION_TEXT__</div>
             </div>
             <div class="card card-group-2">
                 <div class="card-title">5M Best Buy (5分鐘最佳買入價)</div>
-                <div class="card-value">{best_buy_5m}</div>
+                <div class="card-value">__BEST_BUY_5M__</div>
                 <div class="heat"></div>
             </div>
             <div class="card card-group-2">
                 <div class="card-title">5M Best Sell (5分鐘最佳賣出價)</div>
-                <div class="card-value">{best_sell_5m}</div>
+                <div class="card-value">__BEST_SELL_5M__</div>
                 <div class="heat"></div>
             </div>
             <div class="card card-group-3">
                 <div class="card-title">15M Est High (15分鐘預估最高價)</div>
-                <div class="card-value">{est_high15}</div>
+                <div class="card-value">__EST_HIGH15__</div>
             </div>
             <div class="card card-group-3">
                 <div class="card-title">15M Est Low (15分鐘預估最低價)</div>
-                <div class="card-value">{est_low15}</div>
+                <div class="card-value">__EST_LOW15__</div>
             </div>
             <div class="card card-group-4">
                 <div class="card-title">Full Day Est High (整天預估最高價)</div>
-                <div class="card-value">{est_high_full_day}</div>
+                <div class="card-value">__EST_HIGH_FULL_DAY__</div>
             </div>
             <div class="card card-group-4">
                 <div class="card-title">Full Day Est Low (整天預估最低價)</div>
-                <div class="card-value">{est_low_full_day}</div>
+                <div class="card-value">__EST_LOW_FULL_DAY__</div>
             </div>
         </div>
-        <div class="footer">更新時間：{ts}</div>
+        <div class="footer">更新時間：__TS__</div>
     </div>
 </body>
 </html>
 """
-    return HTMLResponse(content=html)
+    # 用安全、精準的 .replace() 逐一塞入變數，徹底斷絕大括號錯位 Bug
+    final_html = raw_html.replace("__SYMBOL__", str(symbol)) \
+                         .replace("__TREND_PERCENT__", str(trend_percent)) \
+                         .replace("__HEAT_ALPHA__", str(heat_alpha)) \
+                         .replace("__LINKS_HTML__", str(links_html)) \
+                         .replace("__CURRENT_PRICE__", str(current_price)) \
+                         .replace("__DIRECTION_TEXT__", str(direction_text)) \
+                         .replace("__BEST_BUY_5M__", str(best_buy_5m)) \
+                         .replace("__BEST_SELL_5M__", str(best_sell_5m)) \
+                         .replace("__EST_HIGH15__", str(est_high15)) \
+                         .replace("__EST_LOW15__", str(est_low15)) \
+                         .replace("__EST_HIGH_FULL_DAY__", str(est_high_full_day)) \
+                         .replace("__EST_LOW_FULL_DAY__", str(est_low_full_day)) \
+                         .replace("__TS__", str(ts))
+
+    return HTMLResponse(content=final_html)
 
 # -----------------------------
 # 主頁：股票選單 (動態讀取所有分類)
