@@ -32,6 +32,8 @@ from fastapi.templating import Jinja2Templates
 from fastapi import Request
 
 templates = Jinja2Templates(directory="templates")
+# 暴力解決 Render 環境下 Jinja2 導致 unhashable type: 'dict' 的快取 Bug
+templates.env.cache = None
 
 @app.get("/dashboard/{symbol}")
 def dashboard_page(request: Request, symbol: str):
