@@ -8,3 +8,4 @@ finnhub-python
 matplotlib
 PyYAML
 Jinja2==3.1.2
+yfinance
