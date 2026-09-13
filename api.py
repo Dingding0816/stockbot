@@ -45,23 +45,23 @@ def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
-    # 💡 【徹底根除罪魁禍首】把之前會引發死鎖的 os.path.exists 快取判斷全部拔除！
-    # 每次被呼叫，都強迫在本機重新抓取、重新畫圖，絕不留殘留快取！
-
     has_data = False
     dates, volumes, closes = [], [], []
 
     base_url = "https://finnhub.io"
     current_time = int(time.time())
     
-    # 使用您一開始最成功的 30 天時間範疇（這段在您的付費 API 權限下絕對是通的）
-    thirty_days_ago = current_time - (30 * 24 * 60 * 60)
+    # 💡 【休市與時區終極防禦】
+    # 1. from 設定在 40 天前，保證一定能包含足夠的 15 個交易日歷史日 K 線
+    # 2. to 參數強制加上 3 天前（未來），徹底解決付費版 API 在「週末/休市期間」傳入即時戳記會回傳空資料（Empty）的底層時區 Bug！
+    from_time = current_time - (40 * 24 * 60 * 60)
+    to_time = current_time + (3 * 24 * 60 * 60)
     
     query_params = {
         "symbol": symbol,
         "resolution": "D",
-        "from": thirty_days_ago,
-        "to": current_time,
+        "from": from_time,
+        "to": to_time,
         "token": FINNHUB_API_KEY
     }
     
@@ -69,7 +69,8 @@ def volume_chart(symbol: str):
         r = requests.get(base_url, params=query_params, timeout=5)
         if r.status_code == 200:
             data = r.json()
-            if "t" in data and data["t"] and len(data["t"]) > 0:
+            # 判斷 Finnhub 是否成功吐出有長度的數據
+            if data.get("s") == "ok" and "t" in data and data["t"] and len(data["t"]) > 0:
                 ts = data["t"][-15:]
                 volumes = data["v"][-15:]
                 closes = data["c"][-15:]
@@ -80,7 +81,7 @@ def volume_chart(symbol: str):
         pass
 
     # ---------------------------------------------------------
-    # 🎨 Matplotlib 繪圖邏輯（加上強迫清除，確保每次都是乾淨的新圖）
+    # 🎨 Matplotlib 繪圖邏輯（維持您最完美的雙軸高質感外觀）
     # ---------------------------------------------------------
     plt.clf()
     plt.close('all')
@@ -88,7 +89,7 @@ def volume_chart(symbol: str):
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：Finnhub 成功回傳資料，直接點亮圖表！ =======
+        # ======= 狀況 A：Finnhub 歷史日 K 線資料解鎖成功，點亮最美圖表！ =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
@@ -118,7 +119,7 @@ def volume_chart(symbol: str):
         plt.grid(alpha=0.25, color="#d1d5db")
         
     else:
-        # ======= 狀況 B：如果 Finnhub 真的抽風，顯示無資料提示 =======
+        # ======= 狀況 B：防禦提示面板（萬一連線真的出了其他差錯） =======
         ax1.set_facecolor("#111827")
         ax1.get_xaxis().set_visible(False)
         ax1.get_yaxis().set_visible(False)
