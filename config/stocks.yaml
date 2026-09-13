@@ -21,3 +21,9 @@ STX:
   data_source: finnhub
   refresh_interval: 60
   display_name: Seagate Technology
+
+META:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: Meta Platforms
