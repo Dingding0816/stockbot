@@ -6,3 +6,4 @@ requests
 pytz
 finnhub-python
 matplotlib
+PyYAML
