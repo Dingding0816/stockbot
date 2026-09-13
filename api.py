@@ -307,9 +307,9 @@ def category_memory():
         <h1>記憶體存儲 Memory</h1>
         <h3>分類：記憶體 · DRAM · NAND</h3>
         
-        <a href="/dashboard/MU" class="btn">MU Dashboard</a>
-        <a href="/dashboard/SNDK" class="btn">SNDK Dashboard</a>
-        <a href="/dashboard/MXL" class="btn">MXL Dashboard</a>
+        <a href="/volume_chart/MU" class="btn">MU Dashboard</a>
+        <a href="/volume_chart/SNDK" class="btn">SNDK Dashboard</a>
+        <a href="/volume_chart/MXL" class="btn">MXL Dashboard</a>
         
         <br />
         <a href="/" class="back-btn">← 返回主矩陣</a>
