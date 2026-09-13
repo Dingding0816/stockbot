@@ -9,3 +9,9 @@ SNDK:
   data_source: finnhub
   refresh_interval: 60
   display_name: SanDisk
+
+MXL:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: MaxLinear
