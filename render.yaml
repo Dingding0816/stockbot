@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: stockbot-api
+    name: stockbot
     env: python
     runtime: python3.10
     plan: free
