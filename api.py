@@ -49,33 +49,38 @@ def volume_chart(symbol: str):
     if os.path.exists(img_filename):
         file_age = time.time() - os.path.getmtime(img_filename)
         if file_age < 21600:
-            return FileResponse(img_filename)
+            return FileResponse(img_filename, media_type="image/png")
 
     has_data = False
     dates, volumes, closes = [], [], []
 
     try:
-        # ======= ⚡ 加上真人瀏覽器 User-Agent 標頭，徹底破解 Yahoo Finance 對雲端機房的 IP 封鎖！ =======
-        import requests
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        })
+        # ======= ⚡ 捨棄被機房封鎖的 Yahoo，改接老牌不鎖 IP 的 Alpha Vantage 公共免費 API =======
+        url = f"https://alphavantage.co{symbol}&apikey=demo"
+        r = requests.get(url, timeout=5)
         
-        ticker = yf.Ticker(symbol, session=session) # 帶著偽裝的 session 去要資料
-        hist = ticker.history(period="1mo")
-        
-        if not hist.empty and len(hist) > 0:
-            last_15 = hist.tail(15)  # 只取最後 15 天的數據來畫圖
-            dates = [d.strftime("%m-%d") for d in last_15.index]
-            volumes = last_15["Volume"].tolist()
-            closes = last_15["Close"].tolist()
-            has_data = True
+        if r.status_code == 200:
+            res_data = r.json()
+            time_series = res_data.get("Time Series (Daily)", {})
+            
+            if time_series:
+                # 抓取最近的 15 天歷史交易日數據
+                sorted_dates = sorted(time_series.keys())[-15:]
+                
+                for d in sorted_dates:
+                    day_data = time_series[d]
+                    # Alpha Vantage 回傳的日期格式本身就是 "YYYY-MM-DD"
+                    dates.append(d[5:]) # 只要月-日 ("MM-DD")
+                    volumes.append(float(day_data.get("5. volume", 0)))
+                    closes.append(float(day_data.get("4. close", 0)))
+                    
+                if len(dates) > 0 and sum(volumes) > 0:
+                    has_data = True
     except Exception:
         pass
 
     # ---------------------------------------------------------
-    # 🎨 Matplotlib 繪圖邏輯
+    # 🎨 Matplotlib 終極繪圖邏輯（維持您最完美的雙軸樣式）
     # ---------------------------------------------------------
     plt.clf()
     plt.close('all')
@@ -83,7 +88,7 @@ def volume_chart(symbol: str):
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：歷史資料順利下載，畫出完美的 K 線趨勢圖 =======
+        # ======= 狀況 A：歷史資料下載成功，點亮精美圖表 =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
@@ -113,7 +118,7 @@ def volume_chart(symbol: str):
         plt.grid(alpha=0.25, color="#d1d5db")
         
     else:
-        # ======= 狀況 B：極端防禦，如果連 yfinance 都故障，畫出深色提示面板 =======
+        # ======= 狀況 B：防禦面板，萬一連 Alpha Vantage 故障時展現 =======
         ax1.set_facecolor("#111827")
         ax1.get_xaxis().set_visible(False)
         ax1.get_yaxis().set_visible(False)
@@ -121,7 +126,7 @@ def volume_chart(symbol: str):
             spine.set_visible(False)
         
         plt.text(0.5, 0.6, f"{symbol} Historical Chart", ha="center", va="center", fontsize=18, color="#ffffff", fontweight="bold")
-        plt.text(0.5, 0.4, "Network Exception: Chart Temporarily Unavailable", ha="center", va="center", fontsize=12, color="#9ca3af")
+        plt.text(0.5, 0.4, "Upstream API Temporarily Overloaded", ha="center", va="center", fontsize=12, color="#9ca3af")
         plt.title(f"{symbol} - Dashboard Status", color="#ffffff", fontsize=14, pad=12)
 
     plt.tight_layout()
