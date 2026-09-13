@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from run_daily_new_17 import run_prediction
 
-# Finnhub API Key 設定
-FINNHUB_API_KEY = "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
+# 全自動讀取 Render 後台寫入的頂級付費金鑰，徹底防止字串拼接裁切錯誤
+import os
+FINNHUB_API_KEY = os.getenv("FINNHUB_TOKEN", "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg")
 
 app = FastAPI(
     title="Stock Prediction API",
