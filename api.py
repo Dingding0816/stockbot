@@ -45,41 +45,42 @@ def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
-    # 1. 智慧快取機制：6小時內有圖就直接秒回，絕對不浪費網路頻寬
-    if os.path.exists(img_filename):
-        file_age = time.time() - os.path.getmtime(img_filename)
-        if file_age < 21600:
-            return FileResponse(img_filename, media_type="image/png")
+    # 💡 【徹底根除罪魁禍首】把之前會引發死鎖的 os.path.exists 快取判斷全部拔除！
+    # 每次被呼叫，都強迫在本機重新抓取、重新畫圖，絕不留殘留快取！
 
     has_data = False
     dates, volumes, closes = [], [], []
 
+    base_url = "https://finnhub.io"
+    current_time = int(time.time())
+    
+    # 使用您一開始最成功的 30 天時間範疇（這段在您的付費 API 權限下絕對是通的）
+    thirty_days_ago = current_time - (30 * 24 * 60 * 60)
+    
+    query_params = {
+        "symbol": symbol,
+        "resolution": "D",
+        "from": thirty_days_ago,
+        "to": current_time,
+        "token": FINNHUB_API_KEY
+    }
+    
     try:
-        # ======= ⚡ 終極反封鎖：加上真人瀏覽器標頭與 Session 機制，100% 突破 Yahoo 對雲端機房的封鎖 =======
-        import requests
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
-        })
-        
-        # 帶著偽裝成真人的連線，直接向 Yahoo Finance 免費調用近一個月的歷史日 K 線
-        ticker = yf.Ticker(symbol, session=session)
-        hist = ticker.history(period="1mo")
-        
-        if not hist.empty and len(hist) > 0 and "Volume" in hist and "Close" in hist:
-            last_15 = hist.tail(15)
-            dates = [d.strftime("%m-%d") for d in last_15.index]
-            volumes = last_15["Volume"].tolist()
-            closes = last_15["Close"].tolist()
-            if len(dates) > 0 and sum(volumes) > 0:
-                has_data = True
+        r = requests.get(base_url, params=query_params, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            if "t" in data and data["t"] and len(data["t"]) > 0:
+                ts = data["t"][-15:]
+                volumes = data["v"][-15:]
+                closes = data["c"][-15:]
+                dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                if len(dates) > 0:
+                    has_data = True
     except Exception:
         pass
 
     # ---------------------------------------------------------
-    # 🎨 Matplotlib 終極雙軸繪圖邏輯（100% 維持您的原版外觀）
+    # 🎨 Matplotlib 繪圖邏輯（加上強迫清除，確保每次都是乾淨的新圖）
     # ---------------------------------------------------------
     plt.clf()
     plt.close('all')
@@ -87,7 +88,7 @@ def volume_chart(symbol: str):
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：歷史資料解鎖成功，呈現您最滿意的綠色與紫色趨勢圖 =======
+        # ======= 狀況 A：Finnhub 成功回傳資料，直接點亮圖表！ =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
@@ -117,7 +118,7 @@ def volume_chart(symbol: str):
         plt.grid(alpha=0.25, color="#d1d5db")
         
     else:
-        # ======= 狀況 B：極端防禦安全面板 =======
+        # ======= 狀況 B：如果 Finnhub 真的抽風，顯示無資料提示 =======
         ax1.set_facecolor("#111827")
         ax1.get_xaxis().set_visible(False)
         ax1.get_yaxis().set_visible(False)
@@ -125,7 +126,7 @@ def volume_chart(symbol: str):
             spine.set_visible(False)
         
         plt.text(0.5, 0.6, f"{symbol} Historical Chart", ha="center", va="center", fontsize=18, color="#ffffff", fontweight="bold")
-        plt.text(0.5, 0.4, "Connecting to Yahoo Finance Secure Channel...", ha="center", va="center", fontsize=12, color="#9ca3af")
+        plt.text(0.5, 0.4, "Finnhub API responding empty. Please try refresh.", ha="center", va="center", fontsize=12, color="#9ca3af")
         plt.title(f"{symbol} - Dashboard Status", color="#ffffff", fontsize=14, pad=12)
 
     plt.tight_layout()
