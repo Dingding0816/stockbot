@@ -1,3 +1,4 @@
+import time  # 請確保 api.py 最上方有 import time，如果沒有請加上去
 import requests
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
@@ -37,17 +38,21 @@ def predict_symbol(symbol: str):
 def volume_chart(symbol: str):
     symbol = symbol.upper()
     
-    base_url = "https://finnhub.io"
+    # 自動計算符合官方規範的 UNIX 時間戳記
+    current_time = int(time.time())
+    thirty_days_ago = current_time - (30 * 24 * 60 * 60) # 30 天前
+    
+    base_url = "https://finnhub.io/api/v1/stock/candle"
     query_params = {
         "symbol": symbol,
         "resolution": "D",
-        "count": 30,
+        "from": thirty_days_ago,  # 補上官方規定的必填開始時間
+        "to": current_time,       # 補上官方規定的必填結束時間
         "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
     }
     
     r = requests.get(base_url, params=query_params)
     
-    # 【新增安全檢查】如果 Finnhub 回傳的不是 200 成功，或者不是 JSON，就把原因顯示在網頁上
     if r.status_code != 200:
         return {
             "error": "Finnhub API 錯誤", 
@@ -63,10 +68,13 @@ def volume_chart(symbol: str):
             "finnhub_raw_text": r.text
         }
 
-    # 確保 Finnhub 有回傳正確數據，避免切片崩潰
+    # 確保 Finnhub 有回傳正確數據
     if "t" not in data or not data["t"]:
         return {"error": f"No data returned from Finnhub for {symbol}", "api_response": data}
 
+    # -----------------------------
+    # 資料切片（取最後 15 筆）
+    # -----------------------------
     ts = data["t"][-15:]
     volumes = data["v"][-15:]
     closes = data["c"][-15:]
@@ -117,7 +125,7 @@ def volume_chart(symbol: str):
         markeredgecolor="#111827",
         zorder=3,
         label="Close Price (收盤價)"
-    )[0]  # 加上 [0] 確保後續 legend 控制正常
+    )[0]  # 確保解構正確
 
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
 
