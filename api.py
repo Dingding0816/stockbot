@@ -1,4 +1,5 @@
 import os  # 請確保檔案最上方有 import os，如果沒有請在最上方補上
+import yfinance as yf  # 導入完全免費的 Yahoo Finance 庫
 import requests
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
@@ -43,58 +44,42 @@ def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
-    # ---------------------------------------------------------
-    # 💡 1. 為了除錯，我們暫時把 6 小時的快取拿掉，每次都強迫重新畫圖！
-    # ---------------------------------------------------------
+    # 智慧快取機制：6小時內有圖就直接秒回
     if os.path.exists(img_filename):
-        try:
-            os.remove(img_filename)
-        except Exception:
-            pass
+        file_age = time.time() - os.path.getmtime(img_filename)
+        if file_age < 21600:
+            return FileResponse(img_filename)
 
-    base_url = "https://finnhub.io"
-    current_time = int(time.time())
-    thirty_days_ago = current_time - (30 * 24 * 60 * 60)
-    
-    query_params = {
-        "symbol": symbol,
-        "resolution": "D",
-        "from": thirty_days_ago,
-        "to": current_time,
-        "token": FINNHUB_API_KEY
-    }
-    
     has_data = False
-    data = {}
-    
+    dates, volumes, closes = [], [], []
+
     try:
-        r = requests.get(base_url, params=query_params, timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            if "t" in data and data["t"] and len(data["t"]) > 0:
-                has_data = True
+        # ======= ⚡ 拋棄可能被機房 IP 擋掉的 K 線端，全面改接完全免驗證的 yfinance =======
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1mo")  # 抓取近 1 個月的歷史日 K 線
+        
+        if not hist.empty and len(hist) > 0:
+            last_15 = hist.tail(15)  # 只取最後 15 天的數據來畫圖
+            dates = [d.strftime("%m-%d") for d in last_15.index]
+            volumes = last_15["Volume"].tolist()
+            closes = last_15["Close"].tolist()
+            has_data = True
     except Exception:
         pass
 
     # ---------------------------------------------------------
-    # 🎨 2. 繪圖邏輯（加上清除畫布，防止畫布疊加出錯）
+    # 🎨 Matplotlib 繪圖邏輯
     # ---------------------------------------------------------
-    plt.clf()  # 【新增】強迫清除上一張圖的殘留畫布，避免 Matplotlib 在 Linux 下崩潰
-    plt.close('all')  # 【新增】關閉所有歷史視窗
-    
+    plt.clf()
+    plt.close('all')
     fig = plt.figure(figsize=(12, 5))
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：有資料，畫正常的成交量與收盤價 =======
+        # ======= 狀況 A：歷史資料順利下載，畫出完美的 K 線趨勢圖 =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
-
-        ts = data["t"][-15:]
-        volumes = data["v"][-15:]
-        closes = data["c"][-15:]
-        dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
 
         bars = ax1.bar(dates, volumes, color="#4ade80", alpha=0.45, width=0.55, zorder=2, label="Volume")
 
@@ -117,11 +102,11 @@ def volume_chart(symbol: str):
             spine.set_path_effects([patheffects.withSimplePatchShadow(offset=(2, -2), alpha=0.4)])
 
         plt.title(f"{symbol} Volume & Close Price", color="#111827", fontsize=16, pad=12)
-        plt.legend(handles=[bars, line[0]], loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=12)
+        plt.legend(handles=[bars, line], loc="lower center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=12)
         plt.grid(alpha=0.25, color="#d1d5db")
         
     else:
-        # ======= 狀況 B：無資料（如 META），由 Matplotlib 畫出深色提示面板 =======
+        # ======= 狀況 B：極端防禦，如果連 yfinance 都故障，畫出深色提示面板 =======
         ax1.set_facecolor("#111827")
         ax1.get_xaxis().set_visible(False)
         ax1.get_yaxis().set_visible(False)
@@ -129,14 +114,11 @@ def volume_chart(symbol: str):
             spine.set_visible(False)
         
         plt.text(0.5, 0.6, f"{symbol} Historical Chart", ha="center", va="center", fontsize=18, color="#ffffff", fontweight="bold")
-        plt.text(0.5, 0.4, "Finnhub Free Plan: No Data Available For This Stock", ha="center", va="center", fontsize=12, color="#9ca3af")
+        plt.text(0.5, 0.4, "Network Exception: Chart Temporarily Unavailable", ha="center", va="center", fontsize=12, color="#9ca3af")
         plt.title(f"{symbol} - Dashboard Status", color="#ffffff", fontsize=14, pad=12)
 
     plt.tight_layout()
     
-    # ---------------------------------------------------------
-    # 💡 3. 安全防禦：如果因為不可抗力連 /tmp 都寫入失敗，當場抓出來
-    # ---------------------------------------------------------
     try:
         plt.savefig(img_filename, dpi=150)
         plt.close(fig)
@@ -144,11 +126,10 @@ def volume_chart(symbol: str):
         plt.close('all')
         return {"error": "Matplotlib 儲存圖片失敗", "reason": str(e)}
 
-    # 4. 再次確認檔案真的有生出來，才回傳
     if os.path.exists(img_filename):
         return FileResponse(img_filename, media_type="image/png")
     
-    return {"error": "圖片生成完畢，但本機磁碟找不到該檔案"}
+    return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # -----------------------------
 # 動態對照表：將英文分類標籤轉成漂亮的中文標題
