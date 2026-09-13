@@ -36,9 +36,16 @@ def predict_symbol(symbol: str):
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
+    
+    # 這是標準且正確的 Finnhub K線 API 網址
     url = f"https://finnhub.io{symbol}&resolution=D&count=30&token={FINNHUB_API_KEY}"
+    
     r = requests.get(url)
     data = r.json()
+
+    # 預防 Finnhub 沒有回傳資料導致後續陣列切片崩潰
+    if "t" not in data:
+        return {"error": f"No data returned from Finnhub for {symbol}", "api_response": data}
 
     ts = data["t"][-15:]
     volumes = data["v"][-15:]
@@ -158,6 +165,7 @@ def volume_chart(symbol: str):
     plt.close()
 
     return FileResponse(f"volume_chart_{symbol}.png")
+
 # -----------------------------
 # 主頁：股票選單
 # -----------------------------
