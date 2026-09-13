@@ -28,8 +28,23 @@ for symbol, cfg in STOCK_CONFIG.items():
         raise ValueError(f"Unknown model type: {model_type}")
 
 
+from fastapi.templating import Jinja2Templates
+from fastapi import Request
+
+templates = Jinja2Templates(directory="templates")
+
 @app.get("/dashboard/{symbol}")
-def dashboard(symbol: str):
+def dashboard_page(request: Request, symbol: str):
+    if symbol not in MODEL_REGISTRY:
+        return {"error": f"Symbol {symbol} not supported"}
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {"request": request, "symbol": symbol}
+    )
+
+@app.get("/api/predict/{symbol}")
+def api_predict(symbol: str):
     if symbol not in MODEL_REGISTRY:
         return {"error": f"Symbol {symbol} not supported"}
 
