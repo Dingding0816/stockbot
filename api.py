@@ -274,7 +274,16 @@ def home():
 
 @app.get("/category/memory", response_class=HTMLResponse)
 def category_memory():
-    html = """
+    # 讀取當前 YAML 的所有股票名稱
+    from config.loader import load_stock_config
+    stock_config = load_stock_config()
+    
+    # 產生按鈕 HTML
+    buttons_html = ""
+    for symbol in stock_config.keys():
+        buttons_html += f'<a href="/dashboard/{symbol}" class="btn">{symbol} Dashboard</a>\n'
+
+    html = f"""
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -282,55 +291,14 @@ def category_memory():
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Memory Stocks</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #0b1120;
-            color: #e5e7eb;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            text-align: center;
-        }
-        .wrap {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 60px 20px;
-        }
-        h1 {
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-        h3 {
-            font-size: 1rem;
-            color: #9ca3af;
-            margin-bottom: 30px;
-        }
-        a.btn {
-            display: inline-block;
-            padding: 18px 40px;
-            margin: 12px;
-            font-size: 1.4rem;
-            border-radius: 12px;
-            text-decoration: none;
-            background: #1f2937;
-            color: #e5e7eb;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.45);
-            border: 1px solid #374151;
-            transition: 0.2s;
-        }
-        a.btn:hover {
-            background: #374151;
-            transform: scale(1.05);
-        }
-        .back-btn {
-            display: inline-block;
-            margin-top: 40px;
-            color: #60a5fa;
-            text-decoration: none;
-            font-size: 1.1rem;
-        }
-        .back-btn:hover {
-            text-decoration: underline;
-        }
+        body {{ margin: 0; padding: 0; background: #0b1120; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; }}
+        .wrap {{ max-width: 960px; margin: 0 auto; padding: 60px 20px; }}
+        h1 {{ font-size: 2rem; margin-bottom: 10px; }}
+        h3 {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }}
+        a.btn {{ display: inline-block; padding: 18px 40px; margin: 12px; font-size: 1.4rem; border-radius: 12px; text-decoration: none; background: #1f2937; color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.2s; }}
+        a.btn:hover {{ background: #374151; transform: scale(1.05); }}
+        .back-btn {{ display: inline-block; margin-top: 40px; color: #60a5fa; text-decoration: none; font-size: 1.1rem; }}
+        .back-btn:hover {{ text-decoration: underline; }}
     </style>
 </head>
 <body>
@@ -338,10 +306,8 @@ def category_memory():
         <h1>記憶體存儲 Memory</h1>
         <h3>分類：記憶體 · DRAM · NAND</h3>
         
-        <a href="/dashboard/MU" class="btn">MU Dashboard</a>
-        <a href="/dashboard/SNDK" class="btn">SNDK Dashboard</a>
-        <a href="/dashboard/MXL" class="btn">MXL Dashboard</a>
-        <a href="/dashboard/STX" class="btn">STX Dashboard</a> <!-- 新增這一行 -->
+        <!-- 這裡會自動塞入所有按鈕 -->
+        {buttons_html}
         
         <br />
         <a href="/" class="back-btn">← 返回主矩陣</a>
@@ -390,6 +356,16 @@ def dashboard(symbol: str):
     heat_alpha = min(abs(actual if actual is not None else 0) * 5, 0.8)
 
     # 原汁原味的深色科技風 HTML、JS 動態刷新腳本與 Matplotlib 歷史圖表嵌入
+    # ========================================================
+    # 👇 就是把這段「動態計算快捷列」加在這裡（html = f""" 的正上方）
+    # ========================================================
+    from config.loader import load_stock_config
+    stock_config = load_stock_config()
+    links_html = ""
+    for sym in stock_config.keys():
+        links_html += f'<a href="/dashboard/{sym}" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">{sym}</a>\n'
+    # ========================================================
+    
     html = f"""
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -446,10 +422,7 @@ def dashboard(symbol: str):
         
         <a class="home-btn" href="/">🏠 回主頁</a>
         <div style="margin-bottom:16px;">
-            <a href="/dashboard/MU" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">MU</a>
-            <a href="/dashboard/SNDK" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">SNDK</a>
-            <a href="/dashboard/MXL" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">MXL</a>
-            <a href="/dashboard/STX" style="color:#93c5fd;text-decoration:none;font-weight:bold;">STX</a> <!-- 新增這一行 -->
+            {links_html}
         </div>
 
         <div class="title">{symbol} Prediction Dashboard</div>
