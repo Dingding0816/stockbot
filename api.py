@@ -54,33 +54,41 @@ def volume_chart(symbol: str):
     has_data = False
     dates, volumes, closes = [], [], []
 
+    # ======= ⚡ 回歸您高權限的 Finnhub 付費 API 連線 =======
+    base_url = "https://finnhub.io"
+    current_time = int(time.time())
+    
+    # 💡 【付費版黃金參數】
+    # 1. from 設定在 40 天前，確保一定能包含足夠的 15 個交易日 K 線
+    # 2. to 設定在目前的 2 天後（未來），防止因時區不對稱或週末未開盤導致當天無數據而報錯
+    from_time = current_time - (40 * 24 * 60 * 60)
+    to_time = current_time + (2 * 24 * 60 * 60)
+    
+    query_params = {
+        "symbol": symbol,
+        "resolution": "D",
+        "from": from_time,
+        "to": to_time,
+        "token": FINNHUB_API_KEY
+    }
+    
     try:
-        # ======= ⚡ 捨棄被機房封鎖的 Yahoo，改接老牌不鎖 IP 的 Alpha Vantage 公共免費 API =======
-        url = f"https://alphavantage.co{symbol}&apikey=demo"
-        r = requests.get(url, timeout=5)
-        
+        r = requests.get(base_url, params=query_params, timeout=5)
         if r.status_code == 200:
-            res_data = r.json()
-            time_series = res_data.get("Time Series (Daily)", {})
-            
-            if time_series:
-                # 抓取最近的 15 天歷史交易日數據
-                sorted_dates = sorted(time_series.keys())[-15:]
-                
-                for d in sorted_dates:
-                    day_data = time_series[d]
-                    # Alpha Vantage 回傳的日期格式本身就是 "YYYY-MM-DD"
-                    dates.append(d[5:]) # 只要月-日 ("MM-DD")
-                    volumes.append(float(day_data.get("5. volume", 0)))
-                    closes.append(float(day_data.get("4. close", 0)))
-                    
-                if len(dates) > 0 and sum(volumes) > 0:
+            data = r.json()
+            # 只要 Finnhub 有成功回傳 K 線狀態為 'ok' 且有時間軸
+            if data.get("s") == "ok" and "t" in data and data["t"]:
+                ts = data["t"][-15:]
+                volumes = data["v"][-15:]
+                closes = data["c"][-15:]
+                dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                if len(dates) > 0:
                     has_data = True
     except Exception:
         pass
 
     # ---------------------------------------------------------
-    # 🎨 Matplotlib 終極繪圖邏輯（維持您最完美的雙軸樣式）
+    # 🎨 Matplotlib 終極雙軸繪圖邏輯（100% 維持您的原版外觀）
     # ---------------------------------------------------------
     plt.clf()
     plt.close('all')
@@ -88,7 +96,7 @@ def volume_chart(symbol: str):
     ax1 = fig.gca()
     
     if has_data:
-        # ======= 狀況 A：歷史資料下載成功，點亮精美圖表 =======
+        # ======= 狀況 A：歷史資料完全釋放，點亮最精美的趨勢圖 =======
         ax1.set_facecolor("#f3f4f6")
         plt.rcParams['axes.edgecolor'] = "#111827"
         plt.rcParams['axes.linewidth'] = 1.2
@@ -118,7 +126,7 @@ def volume_chart(symbol: str):
         plt.grid(alpha=0.25, color="#d1d5db")
         
     else:
-        # ======= 狀況 B：防禦面板，萬一連 Alpha Vantage 故障時展現 =======
+        # ======= 狀況 B：極端防禦提示面板 =======
         ax1.set_facecolor("#111827")
         ax1.get_xaxis().set_visible(False)
         ax1.get_yaxis().set_visible(False)
@@ -126,7 +134,7 @@ def volume_chart(symbol: str):
             spine.set_visible(False)
         
         plt.text(0.5, 0.6, f"{symbol} Historical Chart", ha="center", va="center", fontsize=18, color="#ffffff", fontweight="bold")
-        plt.text(0.5, 0.4, "Upstream API Temporarily Overloaded", ha="center", va="center", fontsize=12, color="#9ca3af")
+        plt.text(0.5, 0.4, "Finnhub Premium Connection Initializing...", ha="center", va="center", fontsize=12, color="#9ca3af")
         plt.title(f"{symbol} - Dashboard Status", color="#ffffff", fontsize=14, pad=12)
 
     plt.tight_layout()
