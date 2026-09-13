@@ -1,0 +1,11 @@
+MU:
+  model_type: memory
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: Micron Technology
+
+SNDK:
+  model_type: memory
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: SanDisk
