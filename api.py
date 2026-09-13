@@ -35,3 +35,42 @@ def dashboard(symbol: str):
 
     model = MODEL_REGISTRY[symbol]
     return model.get_prediction()
+
+from fastapi.responses import HTMLResponse
+
+@app.get("/category/memory")
+def category_memory():
+    html = """
+    <html>
+    <head>
+        <title>Memory Stocks</title>
+        <style>
+            body { font-family: Arial; background-color: #111; color: #eee; text-align: center; }
+            .btn {
+                display: inline-block;
+                padding: 12px 20px;
+                margin: 10px;
+                background-color: #444;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-size: 18px;
+            }
+            .btn:hover { background-color: #666; }
+        </style>
+    </head>
+    <body>
+        <h1>記憶體存儲 Memory</h1>
+        <p>分類：記憶體・DRAM・NAND</p>
+    """
+    # 自動讀取 stocks.yaml 裡的所有股票
+    for symbol in STOCK_CONFIG.keys():
+        html += f'<a href="/dashboard/{symbol}" class="btn">{symbol} Dashboard</a><br>'
+
+    html += """
+        <br><a href="/" class="btn">回主頁</a>
+    </body>
+    </html>
+    """
+
+    return HTMLResponse(html)
