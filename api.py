@@ -55,9 +55,15 @@ def volume_chart(symbol: str):
     dates, volumes, closes = [], [], []
 
     try:
-        # ======= ⚡ 拋棄可能被機房 IP 擋掉的 K 線端，全面改接完全免驗證的 yfinance =======
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1mo")  # 抓取近 1 個月的歷史日 K 線
+        # ======= ⚡ 加上真人瀏覽器 User-Agent 標頭，徹底破解 Yahoo Finance 對雲端機房的 IP 封鎖！ =======
+        import requests
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+        
+        ticker = yf.Ticker(symbol, session=session) # 帶著偽裝的 session 去要資料
+        hist = ticker.history(period="1mo")
         
         if not hist.empty and len(hist) > 0:
             last_15 = hist.tail(15)  # 只取最後 15 天的數據來畫圖
