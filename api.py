@@ -341,6 +341,7 @@ def category_memory():
         <a href="/dashboard/MU" class="btn">MU Dashboard</a>
         <a href="/dashboard/SNDK" class="btn">SNDK Dashboard</a>
         <a href="/dashboard/MXL" class="btn">MXL Dashboard</a>
+        <a href="/dashboard/STX" class="btn">STX Dashboard</a> <!-- 新增這一行 -->
         
         <br />
         <a href="/" class="back-btn">← 返回主矩陣</a>
@@ -447,8 +448,10 @@ def dashboard(symbol: str):
         <div style="margin-bottom:16px;">
             <a href="/dashboard/MU" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">MU</a>
             <a href="/dashboard/SNDK" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">SNDK</a>
-            <a href="/dashboard/MXL" style="color:#93c5fd;text-decoration:none;font-weight:bold;">MXL</a>
+            <a href="/dashboard/MXL" style="margin-right:8px;color:#93c5fd;text-decoration:none;font-weight:bold;">MXL</a>
+            <a href="/dashboard/STX" style="color:#93c5fd;text-decoration:none;font-weight:bold;">STX</a> <!-- 新增這一行 -->
         </div>
+
         <div class="title">{symbol} Prediction Dashboard</div>
         <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
         
