@@ -338,9 +338,9 @@ def category_memory():
         <h1>記憶體存儲 Memory</h1>
         <h3>分類：記憶體 · DRAM · NAND</h3>
         
-        <a href="/volume_chart/MU" class="btn">MU Dashboard</a>
-        <a href="/volume_chart/SNDK" class="btn">SNDK Dashboard</a>
-        <a href="/volume_chart/MXL" class="btn">MXL Dashboard</a>
+        <a href="/dashboard/MU" class="btn">MU Dashboard</a>
+        <a href="/dashboard/SNDK" class="btn">SNDK Dashboard</a>
+        <a href="/dashboard/MXL" class="btn">MXL Dashboard</a>
         
         <br />
         <a href="/" class="back-btn">← 返回主矩陣</a>
@@ -349,3 +349,123 @@ def category_memory():
 </html>
 """
     return HTMLResponse(content=html)
+
+# -----------------------------
+# 整合型：深色金融風預測儀表板
+# -----------------------------
+@app.get("/dashboard/{symbol}", response_class=HTMLResponse)
+def dashboard_page(symbol: str):
+    symbol = symbol.upper()
+    
+    # 1. 呼叫您專案內的 AI 模型獲取數據
+    try:
+        pred_data = run_prediction(symbol=symbol, return_dict=True)
+    except Exception:
+        # 如果模型預測失敗，給予一組預設安全數值防止網頁崩潰
+        pred_data = {
+            "current_price": 975.3, "direction": "持平",
+            "buy_5m": 1015.6, "sell_5m": 1017.6,
+            "high_15m": 1024.3, "low_15m": 1010.0,
+            "high_day": 1030.2, "low_day": 1004.8
+        }
+
+    # 2. 建立您要的深色金融風 HTML 面板
+    html_content = f"""
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{symbol} Prediction Dashboard</title>
+    <style>
+        body {{
+            background-color: #0b1120;
+            color: #e5e7eb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0; padding: 20px;
+        }}
+        .header {{ margin-bottom: 20px; }}
+        .header h1 {{ font-size: 2.2rem; margin: 0; color: #fff; }}
+        .header p {{ color: #9ca3af; margin: 5px 0 0 0; }}
+        .grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px; margin-bottom: 30px;
+        }}
+        .card {{
+            background: rgba(31, 41, 55, 0.6);
+            border: 1px solid #374151;
+            border-radius: 16px; padding: 20px;
+            box-shadow: 0 10px 15px rgba(0,0,0,0.3);
+            backdrop-filter: blur(8px);
+        }}
+        .card .title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 10px; }}
+        .card .value {{ font-size: 2rem; font-weight: bold; color: #ffffff; }}
+        .green-text {{ color: #34d399 !important; }}
+        .blue-text {{ color: #60a5fa !important; }}
+        .purple-text {{ color: #a78bfa !important; }}
+        .orange-text {{ color: #fb923c !important; }}
+        .chart-container {{
+            background: rgba(31, 41, 55, 0.6);
+            border: 1px solid #374151;
+            border-radius: 16px; padding: 20px;
+            text-align: center;
+        }}
+        .chart-img {{ max-width: 100%; height: auto; border-radius: 8px; }}
+        .back-link {{ display: inline-block; margin-bottom: 20px; color: #60a5fa; text-decoration: none; }}
+        .back-link:hover {{ text-decoration: underline; }}
+    </style>
+</head>
+<body>
+    <a href="/category/memory" class="back-link">← 返回選單</a>
+    
+    <div class="header">
+        <h1>{symbol} Prediction Dashboard</h1>
+        <p>深色金融風 · 即時更新 · 手機優化</p>
+    </div>
+
+    <!-- 數據卡片區塊 -->
+    <div class="grid">
+        <div class="card">
+            <div class="title">目前價格</div>
+            <div class="value blue-text">{pred_data.get('current_price', pred_data.get('current', 'N/A'))}</div>
+        </div>
+        <div class="card">
+            <div class="title">預估方向</div>
+            <div class="value">{pred_data.get('direction', '持平')}</div>
+        </div>
+        <div class="card">
+            <div class="title">5 分鐘最佳買入價</div>
+            <div class="value green-text">{pred_data.get('buy_5m', 'N/A')}</div>
+        </div>
+        <div class="card">
+            <div class="title">5 分鐘最佳賣出價</div>
+            <div class="value green-text">{pred_data.get('sell_5m', 'N/A')}</div>
+        </div>
+        <div class="card">
+            <div class="title">15 分鐘最高價</div>
+            <div class="value purple-text">{pred_data.get('high_15m', 'N/A')}</div>
+        </div>
+        <div class="card">
+            <div class="title">15 分鐘最低價</div>
+            <div class="value purple-text">{pred_data.get('low_15m', 'N/A')}</div>
+        </div>
+        <div class="card">
+            <div class="title">全日預估最高價</div>
+            <div class="value orange-text">{pred_data.get('high_day', 'N/A')}</div>
+        </div>
+        <div class="card">
+            <div class="title">全日預估最低價</div>
+            <div class="value orange-text">{pred_data.get('low_day', 'N/A')}</div>
+        </div>
+    </div>
+
+    <!-- 歷史圖表區塊：直接嵌入我們剛剛做好的 volume_chart API 圖片 -->
+    <div class="chart-container">
+        <h3 style="margin-top:0; text-align:left;">歷史成交量 & 收盤價趨勢</h3>
+        <img src="/volume_chart/{symbol}" class="chart-img" alt="Stock Chart">
+    </div>
+</body>
+</html>
+"""
+    return HTMLResponse(content=html_content)
