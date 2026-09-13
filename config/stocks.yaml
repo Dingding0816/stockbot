@@ -15,3 +15,9 @@ MXL:
   data_source: finnhub
   refresh_interval: 60
   display_name: MaxLinear
+
+STX:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: Seagate Technology
