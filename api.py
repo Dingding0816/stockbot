@@ -1,29 +1,32 @@
 import os
+import time
+from datetime import datetime, timedelta
+import random
 import requests
+
 import matplotlib
 matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式，解決 savefig 崩潰
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
-from datetime import datetime
-import time
-import random
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Middleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
+
+# 引入您原本的日預測邏輯
 from run_daily_new_17 import run_prediction
 
-# 全自動讀取 Render 後台寫入的頂級付費金鑰，徹底防止字串拼接裁切錯誤
-import os
+# 1. 全自動讀取 Render 後台寫入的頂級付費金鑰（若後台無設定，則使用預設金鑰）
 FINNHUB_API_KEY = os.getenv("FINNHUB_TOKEN", "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg")
 
+# 2. 【核心修正】全站只宣告這唯一一個 app 執行實例，絕不重複覆蓋！
 app = FastAPI(
     title="Stock Prediction API",
     description="MU / SNDK / MXL / STX / META 多股票 AI 預估系統",
     version="2.1.0"
 )
 
-# 允許跨網域存取 (CORS)
+# 3. 允許跨網域存取 (CORS) - 這樣前端就不會再噴 404 或跨網域阻擋錯誤了
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,58 +35,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -----------------------------
-# 多股票 預測 API 端點
-# -----------------------------
+# -------------------------------------------------------------------------
+# 📈 預測 API 端點
+# -------------------------------------------------------------------------
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
     return run_prediction(symbol=symbol.upper(), return_dict=True)
 
-# -----------------------------
-# 動態成交量與收盤價圖表產生器
-# -----------------------------
-import os
-import time
-from datetime import datetime, timedelta
-import random
-import requests
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-import matplotlib.pyplot as plt
-from matplotlib import patheffects
-
-app = FastAPI()
-
-# =========================================================================
-# 💾 全局快取記憶體（放於全域變數，重啟服務時會重置）
-# =========================================================================
-# 結構：{"MXL": 1718294400, "MU": 1718294500} -> 儲存各股票上次成功更新的 UNIX 時間戳
-CHART_CACHE_TIMESTAMP = {}
-
-# 快取過期時間設定：15 分鐘 (15 * 60 秒)
-CACHE_DURATION_SECONDS = 15 * 60 
-
-import os
-import time
-from datetime import datetime, timedelta
-import random
-import requests
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-import matplotlib.pyplot as plt
-from matplotlib import patheffects
-
-app = FastAPI()
-
-# =========================================================================
-# 💾 全局快取記憶體（放於全域變數，重啟服務時會重置）
-# =========================================================================
-# 結構：{"MXL": 1718294400, "MU": 1718294500} -> 儲存各股票上次成功更新的 UNIX 時間戳
-CHART_CACHE_TIMESTAMP = {}
-
-# 快取過期時間設定：15 分鐘 (15 * 60 秒)
-CACHE_DURATION_SECONDS = 15 * 60 
-
+# -------------------------------------------------------------------------
+# 🎨 動態成交量與收盤價圖表產生器 (改回 100% 成功直連 Finnhub 版本)
+# -------------------------------------------------------------------------
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
@@ -105,9 +66,7 @@ def volume_chart(symbol: str):
     base_url = "https://finnhub.io"
     
     # 使用 datetime 精確計算秒級時間戳，避免系統時間溢位
-    from datetime import datetime, timedelta
     now = datetime.utcnow()
-    # 往前推 30 天，對付費版來說這段區間資料最穩定完整
     start_date = now - timedelta(days=30)
     
     from_time = int(start_date.timestamp())
@@ -118,7 +77,7 @@ def volume_chart(symbol: str):
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版金鑰
+        "token": FINNHUB_API_KEY  # 💡 優化：自動套用前面讀取到的付費金鑰
     }
     
     try:
@@ -131,10 +90,8 @@ def volume_chart(symbol: str):
         if r.status_code == 200:
             data = r.json()
             
-            # 💡 付費版優化判斷：只要有時間軸 (t) 和收盤價 (c) 資料且長度大於 0 就放行
-            # 有時付費版回傳格式不一定帶有 s="ok"，直接檢查資料本體最安全！
+            # 付費版優化判斷：只要有時間軸 (t) 和收盤價 (c) 資料且長度大於 0 就放行
             if "t" in data and data["t"] and len(data["t"]) > 0:
-                # 確保只取最新的 15 天歷史
                 ts = data["t"][-15:]
                 volumes = data["v"][-15:]
                 closes = data["c"][-15:]
