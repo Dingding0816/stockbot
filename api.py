@@ -64,10 +64,12 @@ def volume_chart(symbol: str):
     # =========================================================================
     # 🥇 1st Priority：正面直連 Finnhub 官方伺服器 (付費版優化結構)
     # =========================================================================
-    base_url = "https://finnhub.io"
+    base_url = "https://finnhub.io/api/v1/stock/candle"
     
     # 使用 datetime 精確計算秒級時間戳，避免系統時間溢位
+    from datetime import datetime, timedelta
     now = datetime.utcnow()
+    # 往前推 30 天，對付費版來說這段區間資料最穩定完整
     start_date = now - timedelta(days=30)
     
     from_time = int(start_date.timestamp())
@@ -78,21 +80,24 @@ def volume_chart(symbol: str):
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": FINNHUB_API_KEY  # 自動套用前面讀取到的付費金鑰
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版金鑰
     }
     
     try:
         # 設定 5 秒超時，確保網路卡頓能順利處理
         r = requests.get(base_url, params=query_params, timeout=5)
         
+        # 💡 排錯關鍵：如果不是 200，立刻在 Render 控制台印出 Finnhub 給的付費版錯誤訊息
         if r.status_code != 200:
             print(f"❌ [Finnhub API Error] HTTP {r.status_code}: {r.text}")
             
         if r.status_code == 200:
             data = r.json()
             
-            # 付費版優化判斷：只要有時間軸 (t) 和收盤價 (c) 資料且長度大於 0 就放行
+            # 💡 付費版優化判斷：只要有時間軸 (t) 和收盤價 (c) 資料且長度大於 0 就放行
+            # 有時付費版回傳格式不一定帶有 s="ok"，直接檢查資料本體最安全！
             if "t" in data and data["t"] and len(data["t"]) > 0:
+                # 確保只取最新的 15 天歷史
                 ts = data["t"][-15:]
                 volumes = data["v"][-15:]
                 closes = data["c"][-15:]
@@ -103,9 +108,11 @@ def volume_chart(symbol: str):
                 if len(dates) > 0 and sum(volumes) > 0:
                     has_real_data = True
             else:
+                # 如果回傳了 {"s": "no_data"} 或 {"s": "error"}，印出來以便確認是否權限設定有變
                 print(f"⚠️ [Finnhub Response Alert] 資料結構異常或無資料: {data}")
                 
     except Exception as e:
+        # 捕捉 Render 容器環境常見的 SSL 或是連線超時錯誤
         print(f"❌ [Finnhub Connection Failed] 連線異常原因: {str(e)}")
 
     # =========================================================================
