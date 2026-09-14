@@ -58,35 +58,58 @@ def volume_chart(symbol: str):
     dates, volumes, closes = [], [], []
 
     # =========================================================================
-    # 🥇 1st Priority：正面直連 Finnhub 官方伺服器，全力抓取 100% 真實美股 K 線
+    # 🥇 1st Priority：正面直連 Finnhub 官方伺服器 (付費版優化結構)
     # =========================================================================
-    # 修正：加上精確的 API 節點路徑 /api/v1/stock/candle
-    base_url = "https://finnhub.io"
-    current_time = int(time.time())
-    from_time = current_time - (40 * 24 * 60 * 60) # 往前推 40 天確保拿滿 15 個交易日
+    base_url = "https://finnhub.io/api/v1/stock/candle"
+    
+    # 使用 datetime 精確計算秒級時間戳，避免系統時間溢位
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    # 往前推 30 天，對付費版來說這段區間資料最穩定完整
+    start_date = now - timedelta(days=30)
+    
+    from_time = int(start_date.timestamp())
+    to_time = int(now.timestamp())
 
     query_params = {
         "symbol": symbol,
         "resolution": "D",
         "from": from_time,
-        "to": current_time,  # 修正：補上必要的結束時間戳 (to)
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版專用金鑰
+        "to": to_time,
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版金鑰
     }
     
     try:
-        r = requests.get(base_url, params=query_params, timeout=4)
+        # 設定 5 秒超時，確保網路卡頓能順利處理
+        r = requests.get(base_url, params=query_params, timeout=5)
+        
+        # 💡 排錯關鍵：如果不是 200，立刻在 Render 控制台印出 Finnhub 給的付費版錯誤訊息
+        if r.status_code != 200:
+            print(f"❌ [Finnhub API Error] HTTP {r.status_code}: {r.text}")
+            
         if r.status_code == 200:
             data = r.json()
-            # 必須有成功的 ok 狀態，且回傳陣列長度大於 0
-            if data.get("s") == "ok" and "t" in data and data["t"] and len(data["t"]) > 0:
+            
+            # 💡 付費版優化判斷：只要有時間軸 (t) 和收盤價 (c) 資料且長度大於 0 就放行
+            # 有時付費版回傳格式不一定帶有 s="ok"，直接檢查資料本體最安全！
+            if "t" in data and data["t"] and len(data["t"]) > 0:
+                # 確保只取最新的 15 天歷史
                 ts = data["t"][-15:]
                 volumes = data["v"][-15:]
                 closes = data["c"][-15:]
+                
+                # 轉換為前端圖表日期
                 dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                
                 if len(dates) > 0 and sum(volumes) > 0:
                     has_real_data = True
-    except Exception:
-        pass  # 發生任何連線超時或網路異常，直接放行交給 2nd Priority
+            else:
+                # 如果回傳了 {"s": "no_data"} 或 {"s": "error"}，印出來以便確認是否權限設定有變
+                print(f"⚠️ [Finnhub Response Alert] 資料結構異常或無資料: {data}")
+                
+    except Exception as e:
+        # 捕捉 Render 容器環境常見的 SSL 或是連線超時錯誤
+        print(f"❌ [Finnhub Connection Failed] 連線異常原因: {str(e)}")
 
     # =========================================================================
     # 🥈 2nd Priority：當 Finnhub 無法提供資料時（休市/權限限制），啟動備援模擬機制
