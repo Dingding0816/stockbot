@@ -63,6 +63,27 @@ CHART_CACHE_TIMESTAMP = {}
 # 快取過期時間設定：15 分鐘 (15 * 60 秒)
 CACHE_DURATION_SECONDS = 15 * 60 
 
+import os
+import time
+from datetime import datetime, timedelta
+import random
+import requests
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+import matplotlib.pyplot as plt
+from matplotlib import patheffects
+
+app = FastAPI()
+
+# =========================================================================
+# 💾 全局快取記憶體（放於全域變數，重啟服務時會重置）
+# =========================================================================
+# 結構：{"MXL": 1718294400, "MU": 1718294500} -> 儲存各股票上次成功更新的 UNIX 時間戳
+CHART_CACHE_TIMESTAMP = {}
+
+# 快取過期時間設定：15 分鐘 (15 * 60 秒)
+CACHE_DURATION_SECONDS = 15 * 60 
+
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
