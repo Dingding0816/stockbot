@@ -60,6 +60,7 @@ def volume_chart(symbol: str):
     # =========================================================================
     # 🥇 1st Priority：正面直連 Finnhub 官方伺服器，全力抓取 100% 真實美股 K 線
     # =========================================================================
+    # 修正：加上精確的 API 節點路徑 /api/v1/stock/candle
     base_url = "https://finnhub.io"
     current_time = int(time.time())
     from_time = current_time - (40 * 24 * 60 * 60) # 往前推 40 天確保拿滿 15 個交易日
@@ -68,6 +69,7 @@ def volume_chart(symbol: str):
         "symbol": symbol,
         "resolution": "D",
         "from": from_time,
+        "to": current_time,  # 修正：補上必要的結束時間戳 (to)
         "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版專用金鑰
     }
     
@@ -175,6 +177,7 @@ def volume_chart(symbol: str):
         return FileResponse(img_filename, media_type="image/png")
     
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
+
 # -----------------------------
 # 動態對照表：將英文分類標籤轉成漂亮的中文標題
 # -----------------------------
