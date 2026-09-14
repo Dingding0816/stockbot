@@ -118,18 +118,22 @@ def volume_chart(symbol: str):
     # =========================================================================
     base_url = "https://finnhub.io"
     
-    # 使用 datetime 精確計算秒級時間戳，避免系統時間溢位
+    # 確保所有時間戳百分之百是整數 (int)
+    current_time = int(time.time())
+    
+    from datetime import datetime, timedelta
     now = datetime.utcnow()
     start_date = now - timedelta(days=30)
     
     from_time = int(start_date.timestamp())
-    to_time = current_time
+    to_time = int(current_time) # 確保強制轉型
 
     query_params = {
         "symbol": symbol,
         "resolution": "D",
         "from": from_time,
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版金鑰
+        "to": to_time,  # 💡 檢查點：確認這裡有沒有漏掉 to！
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg" 
     }
     
     try:
@@ -139,18 +143,23 @@ def volume_chart(symbol: str):
             print(f"❌ [Finnhub API Error] HTTP {r.status_code}: {r.text}")
             
         if r.status_code == 200:
-            data = r.json()
-            
-            if "t" in data and data["t"] and len(data["t"]) > 0:
-                ts = data["t"][-15:]
-                volumes = data["v"][-15:]
-                closes = data["c"][-15:]
-                dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+            # 💡 防禦性修正：先確認回應的內容開頭是 JSON 的 '{'，避免噴出 line 1 column 1 錯誤
+            if r.text.strip().startswith('{'):
+                data = r.json()
                 
-                if len(dates) > 0 and sum(volumes) > 0:
-                    has_real_data = True
+                if "t" in data and data["t"] and len(data["t"]) > 0:
+                    ts = data["t"][-15:]
+                    volumes = data["v"][-15:]
+                    closes = data["c"][-15:]
+                    dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                    
+                    if len(dates) > 0 and sum(volumes) > 0:
+                        has_real_data = True
+                else:
+                    print(f"⚠️ [Finnhub Response Alert] 資料結構不符合預期: {r.text}")
             else:
-                print(f"⚠️ [Finnhub Response Alert] 資料結構異常或無資料: {data}")
+                # 如果 Finnhub 噴回一串不是 JSON 的純文字，直接在 Render Log 攤牌看它寫什麼！
+                print(f"❌ [Finnhub Server Text Response] 收到非 JSON 內容: {r.text}")
                 
     except Exception as e:
         print(f"❌ [Finnhub Connection Failed] 連線異常原因: {str(e)}")
