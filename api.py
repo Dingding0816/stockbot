@@ -89,21 +89,7 @@ def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
-    # -------------------------------------------------------------------------
-    # ⚡ 智慧快取檢查邏輯
-    # -------------------------------------------------------------------------
-    current_time = int(time.time())
-    
-    # 條件：磁碟檔案必須存在，且記憶體紀錄的上次更新時間在 15 分鐘以內
-    if os.path.exists(img_filename) and symbol in CHART_CACHE_TIMESTAMP:
-        elapsed_time = current_time - CHART_CACHE_TIMESTAMP[symbol]
-        if elapsed_time < CACHE_DURATION_SECONDS:
-            # 💡 命中快取！直接秒回傳現成圖片，不扣 Finnhub 額度、不浪費效能重新畫圖
-            return FileResponse(img_filename, media_type="image/png")
-
-    # -------------------------------------------------------------------------
-    # 🔄 未命中快取（首次讀取或已過期）：準備重新清除舊檔案並抓取真實資料
-    # -------------------------------------------------------------------------
+    # 強迫每次刷新都重新判斷/重新繪製，絕不留可能死鎖的舊快取
     if os.path.exists(img_filename):
         try:
             os.remove(img_filename)
@@ -118,48 +104,48 @@ def volume_chart(symbol: str):
     # =========================================================================
     base_url = "https://finnhub.io"
     
-    # 確保所有時間戳百分之百是整數 (int)
-    current_time = int(time.time())
-    
+    # 使用 datetime 精確計算秒級時間戳，避免系統時間溢位
     from datetime import datetime, timedelta
     now = datetime.utcnow()
+    # 往前推 30 天，對付費版來說這段區間資料最穩定完整
     start_date = now - timedelta(days=30)
     
     from_time = int(start_date.timestamp())
-    to_time = int(current_time) # 確保強制轉型
+    to_time = int(now.timestamp())
 
     query_params = {
         "symbol": symbol,
         "resolution": "D",
         "from": from_time,
-        "to": to_time,  # 💡 檢查點：確認這裡有沒有漏掉 to！
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg" 
+        "to": to_time,
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版金鑰
     }
     
     try:
+        # 設定 5 秒超時，確保網路卡頓能順利處理
         r = requests.get(base_url, params=query_params, timeout=5)
         
         if r.status_code != 200:
             print(f"❌ [Finnhub API Error] HTTP {r.status_code}: {r.text}")
             
         if r.status_code == 200:
-            # 💡 防禦性修正：先確認回應的內容開頭是 JSON 的 '{'，避免噴出 line 1 column 1 錯誤
-            if r.text.strip().startswith('{'):
-                data = r.json()
+            data = r.json()
+            
+            # 💡 付費版優化判斷：只要有時間軸 (t) 和收盤價 (c) 資料且長度大於 0 就放行
+            # 有時付費版回傳格式不一定帶有 s="ok"，直接檢查資料本體最安全！
+            if "t" in data and data["t"] and len(data["t"]) > 0:
+                # 確保只取最新的 15 天歷史
+                ts = data["t"][-15:]
+                volumes = data["v"][-15:]
+                closes = data["c"][-15:]
                 
-                if "t" in data and data["t"] and len(data["t"]) > 0:
-                    ts = data["t"][-15:]
-                    volumes = data["v"][-15:]
-                    closes = data["c"][-15:]
-                    dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
-                    
-                    if len(dates) > 0 and sum(volumes) > 0:
-                        has_real_data = True
-                else:
-                    print(f"⚠️ [Finnhub Response Alert] 資料結構不符合預期: {r.text}")
+                # 轉換為前端圖表日期
+                dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                
+                if len(dates) > 0 and sum(volumes) > 0:
+                    has_real_data = True
             else:
-                # 如果 Finnhub 噴回一串不是 JSON 的純文字，直接在 Render Log 攤牌看它寫什麼！
-                print(f"❌ [Finnhub Server Text Response] 收到非 JSON 內容: {r.text}")
+                print(f"⚠️ [Finnhub Response Alert] 資料結構異常或無資料: {data}")
                 
     except Exception as e:
         print(f"❌ [Finnhub Connection Failed] 連線異常原因: {str(e)}")
@@ -176,6 +162,7 @@ def volume_chart(symbol: str):
             defaults = {"MU": 112.5, "SNDK": 86.2, "MXL": 24.8, "STX": 93.4, "META": 524.1}
             base_price = defaults.get(symbol, 100.0)
 
+        current_time = int(time.time())
         day_count = 0
         ts_list = []
         while len(ts_list) < 15:
@@ -198,7 +185,7 @@ def volume_chart(symbol: str):
             volumes.append(random.randint(3500000, 7500000))
 
     # ---------------------------------------------------------
-    # 🎨 Matplotlib 雙 Y 軸高質感繪圖邏輯
+    # 🎨 Matplotlib 雙 Y 軸高質感繪圖邏輯（100% 穩定輸出）
     # ---------------------------------------------------------
     plt.clf()
     plt.close('all')
@@ -239,10 +226,6 @@ def volume_chart(symbol: str):
     try:
         plt.savefig(img_filename, dpi=150)
         plt.close(fig)
-        
-        # 💡 核心關鍵：只有當圖片成功繪製並儲存後，才更新該股票的「快取時間點」
-        CHART_CACHE_TIMESTAMP[symbol] = int(time.time())
-        
     except Exception as e:
         plt.close('all')
         return {"error": "Matplotlib 儲存圖片失敗", "reason": str(e)}
