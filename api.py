@@ -260,14 +260,14 @@ CATEGORY_NAMES = {
 }
 
 # -----------------------------
-# 整合型：深色金融風預測儀表板（歷史快取備援版）
+# 整合型：深色金融風預測儀表板（歷史快取 + yfinance Beta 完美融合版）
 # -----------------------------
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
     sym = symbol.upper()
     raw_result = run_prediction(symbol=sym, return_dict=True)
     
-    # 💡 第一次進入網頁時，也同樣啟動歷史快取備援機制
+    # 💡 啟動歷史快取備援機制
     result = process_prediction_with_cache(sym, raw_result)
 
     def r(x):
@@ -286,15 +286,26 @@ def dashboard(symbol: str):
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp")
 
-    direction_text = "持平"
-    if score is not None and score != "--":
+    # --- 🔎 【新增】融合快取機制的 yfinance Beta 抓取邏輯 ---
+    beta_text = "N/A"
+    # 如果全域快取中該股已經有記錄過有效 Beta，直接拿來用，避免每次換頁都重新連線 API 拖慢時間
+    if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
+        beta_text = PREDICTION_CACHE[sym]["beta_cached"]
+    else:
         try:
-            if float(score) > 0:
-                direction_text = "上漲 📈"
-            elif float(score) < 0:
-                direction_text = "下跌 📉"
-        except:
-            pass
+            import yfinance as yf
+            ticker = yf.Ticker(sym)
+            beta_val = ticker.info.get('beta')
+            if beta_val is not None:
+                beta_text = str(round(beta_val, 2))
+                # 寫入快取，供下一次存取使用
+                if sym not in PREDICTION_CACHE:
+                    PREDICTION_CACHE[sym] = {}
+                PREDICTION_CACHE[sym]["beta_cached"] = beta_text
+        except Exception as e:
+            print(f"⚠️ 透過 yfinance 抓取 {sym} Beta 失敗，暫時顯示 N/A: {e}")
+            beta_text = "N/A"
+    # ----------------------------------------------------
 
     try:
         val = float(score) if (score is not None and score != "--") else 0
@@ -385,9 +396,10 @@ def dashboard(symbol: str):
                 <div class="card-value" id="price">__CURRENT_PRICE__</div>
                 <div class="trend-bar"></div>
             </div>
+            <!-- 💡 將原本的 Direction 改為 Beta 係數，並改用 __BETA_TEXT__ -->
             <div class="card card-group-1">
-                <div class="card-title">Direction (預估方向)</div>
-                <div class="card-value">__DIRECTION_TEXT__</div>
+                <div class="card-title">Beta Coefficient (Beta 係數)</div>
+                <div class="card-value">__BETA_TEXT__</div>
             </div>
             <div class="card card-group-2">
                 <div class="card-title">5M Best Buy (5分鐘最佳買入價)</div>
@@ -426,7 +438,7 @@ def dashboard(symbol: str):
                          .replace("__HEAT_ALPHA__", str(heat_alpha)) \
                          .replace("__LINKS_HTML__", str(links_html)) \
                          .replace("__CURRENT_PRICE__", str(current_price)) \
-                         .replace("__DIRECTION_TEXT__", str(direction_text)) \
+                         .replace("__BETA_TEXT__", str(beta_text)) \
                          .replace("__BEST_BUY_5M__", str(best_buy_5m)) \
                          .replace("__BEST_SELL_5M__", str(best_sell_5m)) \
                          .replace("__EST_HIGH15__", str(est_high15)) \
