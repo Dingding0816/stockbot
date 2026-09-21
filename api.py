@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 import random
 import requests
 import math  # 用來安全檢查 nan
+import numpy as np
+import pandas as pd
+import yfinance as yf
 
 import matplotlib
 matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式，解決 savefig 崩潰
@@ -259,9 +262,9 @@ CATEGORY_NAMES = {
     "ai": "AI 與社群媒體 AI Matrix"
 }
 
-# -----------------------------
-# 整合型：深色金融風預測儀表板（歷史快取 + yfinance Beta + SNDK 修正保底版）
-# -----------------------------
+# -------------------------------------------------------------------------
+# 整合型：深色金融風預測儀表板（全自動動態 Beta 計算 + 全域歷史快取版）
+# -------------------------------------------------------------------------
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
     sym = symbol.upper()
@@ -287,34 +290,55 @@ def dashboard(symbol: str):
     ts = result.get("timestamp")
 
     # =========================================================================
-    # 📍 【就是這一段！】取代原本抓 Beta 的位置，加入了 SNDK 3.81 修正保底邏輯
+    # 📍 動態 Beta 計算邏輯：不綁定任何代碼，適用所有未來新增股票
     # =========================================================================
     beta_text = "N/A"
     
-    # 1. 如果全域快取中已經有記錄過，直接拿來用（最快）
+    # 1. 先行檢查全域快取，若今天算過這檔股票就直接讀取，不重複計算拖慢換頁
     if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
         beta_text = PREDICTION_CACHE[sym]["beta_cached"]
     else:
         try:
-            import yfinance as yf
+            # 先嘗試標準流程：直接從 info 裡面撈現成的 Beta
             ticker = yf.Ticker(sym)
             beta_val = ticker.info.get('beta')
             
-            if beta_val is not None:
-                beta_text = str(round(beta_val, 2))
-            # 💡 修正邏輯：如果 yfinance 抽風漏給數據，但股票明明正常交易，針對 SNDK 自動補上真實市場值 3.81
-            elif sym == "SNDK":
-                beta_text = "3.81"
+            # 2. 💡 動態防禦核心：若 info 漏給資料（不論是任何未來股票）
+            if beta_val is None:
+                print(f"ℹ️ {sym} 的 info 無 beta 資料，啟動全自動 K 線動態計算...")
                 
-            # 成功取得或代入數值後，寫入全域快取，避免每 5 秒重複檢查
-            if beta_text != "N/A":
+                # 同步下載「個股」與「S&P 500 大盤 (^GSPC)」過去 1 年的日線歷史資料
+                df_stock = yf.download(sym, period="1y", interval="1d", progress=False)
+                df_market = yf.download("^GSPC", period="1y", interval="1d", progress=False)
+                
+                if not df_stock.empty and not df_market.empty:
+                    # 提取收盤價並對齊時間軸（取交集）
+                    close_stock = df_stock['Close']
+                    close_market = df_market['Close']
+                    combined = pd.concat([close_stock, close_market], axis=1, join='inner').dropna()
+                    combined.columns = ['stock', 'market']
+                    
+                    # 計算每日報酬率
+                    returns = combined.pct_change().dropna()
+                    
+                    # 運用統計學公式計算 Beta = Covariance(個股, 大盤) / Variance(大盤)
+                    covariance = np.cov(returns['stock'], returns['market'])
+                    market_variance = np.var(returns['market'], ddof=1)
+                    
+                    if market_variance != 0:
+                        beta_val = covariance[0, 1] / market_variance
+            
+            # 3. 格式化輸出並寫入全域快取
+            if beta_val is not None and not math.isnan(beta_val):
+                beta_text = str(round(float(beta_val), 2))
+                
                 if sym not in PREDICTION_CACHE:
                     PREDICTION_CACHE[sym] = {}
                 PREDICTION_CACHE[sym]["beta_cached"] = beta_text
+                
         except Exception as e:
-            print(f"⚠️ 透過 yfinance 抓取 {sym} Beta 失敗: {e}")
-            # 如果全面斷訊且連快取都沒有，遇到 SNDK 依然強制保底顯示，其餘給 N/A
-            beta_text = "3.81" if sym == "SNDK" else "N/A"
+            print(f"❌ 萬能動態計算系統失敗 (標的: {sym}): {e}")
+            beta_text = "N/A"
     # =========================================================================
 
     try:
