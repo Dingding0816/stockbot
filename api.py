@@ -482,33 +482,130 @@ def dashboard(symbol: str):
 
     return HTMLResponse(content=final_html)
 
-# -----------------------------
-# 主頁：股票選單 (動態讀取所有分類 + 新增智慧下拉搜尋盒)
-# -----------------------------
-@app.get("/", response_class=HTMLResponse)
-def home():
+# =========================================================================
+# 📊 [第一段] 全新量化監控矩陣頁面路由 (/matrix) - 後端數據與核心打標邏輯
+# =========================================================================
+@app.get("/matrix", response_class=HTMLResponse)
+def quant_matrix_page():
     from config.loader import load_stock_config
+    import yfinance as yf
+    import numpy as np
+    import pandas as pd
+    
     stock_config = load_stock_config()
+    matrix_rows_html = ""
     
-    # 1. 自動收集 stocks.yaml 裡出現過的所有不重複分類與股票代號
-    categories_set = set()
-    search_options_html = ""
-    
-    for symbol, cfg in stock_config.items():
-        symbol = symbol.upper()
-        if "category" in cfg:
-            categories_set.add(cfg["category"])
+    for sym in stock_config.keys():
+        sym = sym.upper()
+        result = run_prediction(symbol=sym, return_dict=True)
+        result = process_prediction_with_cache(sym, result)
         
-        # 產生下拉選單的選項 (顯示格式: MU - Micron Technology)
-        display_name = cfg.get("display_name", symbol)
-        search_options_html += f'<option value="{symbol}">{symbol} - {display_name}</option>\n'
-            
-    # 2. 自動生成首頁的分類大按鈕
-    categories_html = ""
-    for cat in sorted(categories_set):
-        display_name = CATEGORY_NAMES.get(cat, cat.upper())
-        categories_html += f'<a class="category-btn" href="/category/{cat}">{display_name}</a>\n'
+        beta_val = None
+        if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
+            try:
+                beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
+            except:
+                pass
+        
+        if beta_val is None:
+            try:
+                ticker = yf.Ticker(sym)
+                beta_val = ticker.info.get('beta')
+                if beta_val is None:
+                    df_stock = yf.download(sym, period="1y", interval="1d", progress=False)
+                    df_market = yf.download("^GSPC", period="1y", interval="1d", progress=False)
+                    if not df_stock.empty and not df_market.empty:
+                        combined = pd.concat([df_stock['Close'], df_market['Close']], axis=1, join='inner').dropna()
+                        combined.columns = ['stock', 'market']
+                        returns = combined.pct_change().dropna()
+                        cov = np.cov(returns['stock'], returns['market'])
+                        m_var = np.var(returns['market'], ddof=1)
+                        if m_var != 0:
+                            beta_val = cov / m_var
+                if beta_val is not None and not math.isnan(beta_val):
+                    PREDICTION_CACHE[sym]["beta_cached"] = str(round(float(beta_val), 2))
+            except:
+                beta_val = 1.0
+                
+        final_beta = float(beta_val) if beta_val is not None else 1.0
+        price_score = result.get("predicted_score")
+        price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
+        
+        vol_change = result.get("volume_change")
+        if vol_change is None:
+            try:
+                hist_vol = yf.download(sym, period="5d", interval="1d", progress=False)['Volume']
+                vol_change = float(hist_vol.iloc[-1] - hist_vol.mean())
+            except:
+                vol_change = 0.0
+        else:
+            vol_change = float(vol_change)
 
+        beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
+        vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
+        price_trend = "📈 上漲 (價漲)" if price_score > 0 else "📉 下跌 (價跌)" if price_score < 0 else "➡️ 持平"
+        
+        row_class = "row-normal"
+        if final_beta > 1.5:
+            if vol_change >= 0 and price_score > 0:
+                scen_num = "情境 1 (極度過熱)"
+                row_class = "row-warn"
+                status = "易遭隔日沖減碼（拉回修正）<br><small style='color:#fcd34d;'>⚠️ 動能極強但吸引大量短線客，開盤易震盪。</small>"
+                buy_strat = "開盤絕不追高<br><small>若看好長線，靜待盤中拉回均線再低吸。</small>"
+                sell_strat = "開盤上漲則分批獲利了結<br><small>開盤若直接跳空大跌則轉為觀望。</small>"
+            elif vol_change >= 0 and price_score <= 0:
+                scen_num = "情境 2 (主力出貨)"
+                row_class = "row-danger"
+                status = "主力高位倒貨（恐慌踩踏）<br><small style='color:#f87171;'>🚨 屬於危險出貨訊號，高 Beta 會加劇跌幅。</small>"
+                buy_strat = "嚴禁抄底<br><small>左側交易風險極高，下行空間大。</small>"
+                sell_strat = "開盤若有小反彈無條件減碼<br><small>防範跌幅擴大。</small>"
+            else:
+                scen_num = "情境 3 (強勢鎖籌)"
+                row_class = "row-success"
+                status = "籌碼高度鎖定（驚天惜售）<br><small style='color:#34d399;'>🔥 主力控盤度極高，散戶未跟風，續漲力強。</small>"
+                buy_strat = "開盤可逢低適量試倉<br><small>屬於健康的良性上漲結構。</small>"
+                sell_strat = "持股續抱<br><small>移動止盈點上移，讓獲利持續奔跑。</small>"
+        else:
+            if vol_change >= 0 and price_score > 0:
+                scen_num = "情境 4 (健康多頭)"
+                row_class = "row-success"
+                status = "穩健型價量齊揚（波段起漲）<br><small style='color:#34d399;'>🛡️ 波動較溫和，資金穩健流入，不易引來瘋狂隔日沖。</small>"
+                buy_strat = "開盤可積極分批佈局<br><small>波段勝率高，走勢相對有支撐。</small>"
+                sell_strat = "中長線持股續抱<br><small>無須過度擔心極短線的大幅洗盤。</small>"
+            elif vol_change < 0 and price_score < 0:
+                scen_num = "情境 5 (無量陰跌)"
+                status = "陰跌退潮期（缺乏資金關注）<br><small style='color:#9ca3af;'>💤 市場人氣渙散，暫無主力進駐，股價緩慢修正。</small>"
+                buy_strat = "資金保留，持續觀望<br><small>暫無發動跡象，買入容易卡死資金。</small>"
+                sell_strat = "分批弱勢汰換<br><small>將資金移往強勢股。</small>"
+            else:
+                scen_num = "情境 6 (誘多陷阱)"
+                row_class = "row-warn"
+                status = "高敏感無量陰跌（殺多起點）<br><small style='color:#fcd34d;'>🩸 雖然量縮，但極易因為市場一點點風吹草動就變暴跌。</small>"
+                buy_strat = "絕對不要左側接刀<br><small>等待爆量止跌訊號出現。</small>"
+                sell_strat = "及時停損或換股<br><small>防範大盤突然崩盤時出現成倍跌幅。</small>"
+
+        matrix_rows_html += f"""
+        <tr class="{row_class}">
+            <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{sym}" style="color:#60a5fa; text-decoration:none;">📈 {sym}</a></td>
+            <td style="color:#9ca3af; font-size:0.9rem;">{scen_num}</td>
+            <td>{beta_cond}</td>
+            <td>{vol_trend}</td>
+            <td>{price_trend}</td>
+            <td>{status}</td>
+            <td style="color:#34d399;">{buy_strat}</td>
+            <td style="color:#f87171;">{sell_strat}</td>
+        </tr>
+        """
+# =========================================================================
+# 📊 [第二段] 量化監控矩陣 HTML 輸出 ＆ 主頁面路由後端邏輯
+# =========================================================================
+    # 網頁外殼模板 (深色奢華金融風，緊湊型字串防截斷設計)
+    raw_html = """<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title><style>body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1120; color: #e5e7eb; }.container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }.home-btn { display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }.title { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }.subtitle { font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }.matrix-table { width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }.matrix-table th { background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; border-bottom: 2px solid #1f2937; }.matrix-table td { padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }.row-success { background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }.row-warn { background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }.row-danger { background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }small { display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.8; }</style></head><body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a><div class="title">📊 動態動能與風險量化矩陣圖</div><div class="subtitle">即時多股監控雷達 · 根據大盤連動度與價量結構自動打標分類</div><table class="matrix-table"><thead><tr><th style="width: 10%;">股票代號</th><th style="width: 12%;">目前符合情境</th><th style="width: 10%;">Beta 條件</th><th style="width: 11%;">成交量趨勢</th><th style="width: 11%;">收盤價趨勢</th><th style="width: 18%;">📊 系統判斷結果 (預期走勢)</th><th style="width: 14%;">🟢 建議操作 (买进)</th><th style="width: 14%;">🔴 建議操作 (卖出)</th></tr></thead><tbody>__MATRIX_ROWS__</tbody></table></div></body></html>"""
+    return HTMLResponse(content=raw_html.replace("__MATRIX_ROWS__", matrix_rows_html))
+# =========================================================================
+# 📊 [第三段] 完整的首頁大按鈕與前端發光雷達入口 HTML
+# =========================================================================
+    # 💡 建立首頁的標準 HTML 原始碼字串
     html = f"""
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -519,11 +616,22 @@ def home():
     <style>
         body {{ margin: 0; padding: 0; background: #0b1120; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
         .bg-grid {{ position: fixed; inset: 0; background-image: linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 40px 40px; z-index: -1; }}
-        .wrap {{ max-width: 960px; margin: 0 auto; padding: 60px 20px; text-align: center; }}
+        .wrap {{ max-width: 960px; margin: 0 auto; padding: 40px 20px; text-align: center; }}
         h1 {{ font-size: 2.6rem; font-weight: 800; margin-bottom: 10px; background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6); -webkit-background-clip: text; color: transparent; }}
         h3 {{ font-size: 1.1rem; color: #9ca3af; margin-bottom: 30px; }}
         
-        /* 🔍 智慧搜尋盒專用深色科技風樣式 */
+        /* 📊 矩陣雷達入口專用精美極致發光樣式 */
+        .matrix-radar-btn {{
+            display: inline-block; padding: 14px 28px; 
+            background: linear-gradient(135deg, #2563eb, #4f46e5); 
+            color: #ffffff; text-decoration: none; border-radius: 10px; 
+            font-weight: bold; font-size: 1.1rem; 
+            box-shadow: 0 4px 20px rgba(79, 70, 229, 0.4); 
+            transition: all 0.25s ease; margin-bottom: 35px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }}
+        .matrix-radar-btn:hover {{ transform: translateY(-3px) scale(1.03); box-shadow: 0 6px 25px rgba(79, 70, 229, 0.6); filter: brightness(1.15); }}
+        
         .search-container {{
             max-width: 420px; margin: 0 auto 40px auto; display: flex; gap: 10px;
             background: rgba(31, 41, 55, 0.5); padding: 8px 12px; border-radius: 12px;
@@ -551,6 +659,11 @@ def home():
         <h1>⚡ Silicon Sector Matrix</h1>
         <h3>半導體 · 記憶體 · AI · 多股票智能中樞</h3>
         
+        <!-- 📊 完美挖掘的量化矩陣雷達入口 -->
+        <a class="matrix-radar-btn" href="/matrix">
+            📊 開盤量化監控矩陣雷達（多股即時對照）➔
+        </a>
+        
         <!-- 🔍 智慧搜尋盒區塊 -->
         <div class="search-container">
             <input type="text" id="stockSearch" class="search-input" list="stockList" placeholder="輸入關鍵字或選擇股票... (EX: MU)" onkeypress="handleKeyPress(event)">
@@ -561,19 +674,15 @@ def home():
         </div>
 
         <script>
-            // 點擊「直達」按鈕的導向邏輯
             function goToDashboard() {{
                 let inputVal = document.getElementById("stockSearch").value.trim().toUpperCase();
                 if (inputVal) {{
-                    // 如果使用者選擇了帶有說明的選項，切出最前面的股票代號 (例如從 "MU - Micron" 切出 "MU")
                     let symbol = inputVal.split(" ")[0];
                     window.location.href = "/dashboard/" + symbol;
                 }} else {{
                     alert("請先輸入或選擇一個股票代號喔！");
                 }}
             }}
-
-            // 支援按下 Enter 鍵直接直達
             function handleKeyPress(event) {{
                 if (event.key === "Enter") {{
                     goToDashboard();
@@ -581,13 +690,40 @@ def home():
             }}
         </script>
         
-        <!-- 分類大按鈕區塊 -->
+        <!-- 動態生成的分類按鈕 -->
         {categories_html}
     </div>
 </body>
 </html>
 """
     return HTMLResponse(content=html)
+
+# -------------------------------------------------------------------------
+# 主頁：股票選單 (動態讀取所有分類 + 新增智慧下拉搜尋盒)
+# -------------------------------------------------------------------------
+@app.get("/", response_class=HTMLResponse)
+def home():
+    from config.loader import load_stock_config
+    stock_config = load_stock_config()
+    
+    # 1. 自動收集 stocks.yaml 裡出現過的所有不重複分類與股票代號
+    categories_set = set()
+    search_options_html = ""
+    
+    for symbol, cfg in stock_config.items():
+        symbol = symbol.upper()
+        if "category" in cfg:
+            categories_set.add(cfg["category"])
+        
+        # 產生下拉選單的選項
+        display_name = cfg.get("display_name", symbol)
+        search_options_html += f'<option value="{symbol}">{symbol} - {display_name}</option>\n'
+            
+    # 2. 自動生成首頁的分類大按鈕
+    categories_html = ""
+    for cat in sorted(categories_set):
+        display_name = CATEGORY_NAMES.get(cat, cat.upper())
+        categories_html += f'<a class="category-btn" href="/category/{cat}">{display_name}</a>\n'
 
 # -----------------------------
 # 分類頁面：動態路由
