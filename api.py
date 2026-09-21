@@ -43,45 +43,26 @@ app.add_middleware(
 # -------------------------------------------------------------------------
 # 💾 【新增】全域預測歷史快取機制 (預防 NaN 斷訊)
 # -------------------------------------------------------------------------
-# 結構會是：{"MXL": {"best_buy_5m": 83.2, ...}, "META": {...}}
 PREDICTION_CACHE = {}
 
 def process_prediction_with_cache(symbol: str, raw_result: dict) -> dict:
-    """
-    核心快取容錯機制：
-    1. 遍歷本次預測結果的所有欄位。
-    2. 如果欄位值是 NaN，且過去有成功存下歷史數值，則自動用歷史值替換。
-    3. 如果欄位值是有效數字，則更新快取庫，作為下一次的備援。
-    4. 最終移除所有 NaN，確保完全 JSON 相容。
-    """
     sym = symbol.upper()
-    
-    # 如果這個股票從來沒有建立過快取紀錄，先幫它建立一個空字典
     if sym not in PREDICTION_CACHE:
         PREDICTION_CACHE[sym] = {}
-        
     cleaned_result = {}
-    
     for key, value in raw_result.items():
         is_nan = False
-        
-        # 判斷是否為 NaN
         if isinstance(value, float) and math.isnan(value):
             is_nan = True
-            
         if is_nan or value is None:
-            # 💡 觸發容錯：如果是 NaN 或空值，去撈上一次成功的歷史紀錄
             if key in PREDICTION_CACHE[sym]:
                 cleaned_result[key] = PREDICTION_CACHE[sym][key]
                 print(f"⚠️ [{sym}] 欄位 '{key}' 當前為 NaN，已成功自動替換為歷史紀錄: {cleaned_result[key]}")
             else:
-                # 如果連歷史紀錄都沒有，就只能先給 None (前端會顯示 --)
                 cleaned_result[key] = None
         else:
-            # 💡 欄位正常：將有效數值存入快取庫，並放入結果中
             PREDICTION_CACHE[sym][key] = value
             cleaned_result[key] = value
-            
     return cleaned_result
 
 # -------------------------------------------------------------------------
@@ -91,19 +72,151 @@ def process_prediction_with_cache(symbol: str, raw_result: dict) -> dict:
 def predict_symbol(symbol: str):
     sym = symbol.upper()
     raw_result = run_prediction(symbol=sym, return_dict=True)
-    
-    # 💡 透過快取防火牆清洗：如果是 NaN 就用上一次的值，並確保 Render 不再噴 JSON 錯誤
     return process_prediction_with_cache(sym, raw_result)
+
+# =========================================================================
+# 📊 全新量化監控矩陣頁面路由 (/matrix) - 後端數據與核心打標邏輯
+# =========================================================================
+@app.get("/matrix", response_class=HTMLResponse)
+def quant_matrix_page():
+    from config.loader import load_stock_config
     
+    matrix_rows_html = ""
+    try:
+        stock_config = load_stock_config()
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
+    
+    for sym in stock_config.keys():
+        sym = sym.upper()
+        try:
+            raw_result = run_prediction(symbol=sym, return_dict=True)
+            result = process_prediction_with_cache(sym, raw_result)
+        except Exception as e:
+            print(f"預測模型執行失敗 ({sym}): {e}")
+            result = {}
+
+        beta_val = None
+        if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
+            try:
+                beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
+            except:
+                pass
+        
+        if beta_val is None:
+            try:
+                ticker = yf.Ticker(sym)
+                beta_val = ticker.info.get('beta')
+                if beta_val is None:
+                    df_stock = yf.download(sym, period="1y", interval="1d", progress=False)
+                    df_market = yf.download("^GSPC", period="1y", interval="1d", progress=False)
+                    if not df_stock.empty and not df_market.empty:
+                        combined = pd.concat([df_stock['Close'], df_market['Close']], axis=1, join='inner').dropna()
+                        combined.columns = ['stock', 'market']
+                        returns = combined.pct_change().dropna()
+                        cov = np.cov(returns['stock'], returns['market'])
+                        m_var = np.var(returns['market'], ddof=1)
+                        if m_var != 0:
+                            # 💡 防禦優化：安全取出協方差標量，防範降維錯誤
+                            val_cov = cov[0, 1] if cov.ndim > 1 else cov
+                            beta_val = val_cov / m_var
+                if beta_val is not None and not math.isnan(beta_val):
+                    PREDICTION_CACHE[sym]["beta_cached"] = str(round(float(beta_val), 2))
+            except Exception as e:
+                print(f"Beta計算失敗 ({sym}): {e}")
+                beta_val = 1.0
+                
+        final_beta = float(beta_val) if beta_val is not None else 1.0
+        
+        try:
+            price_score = result.get("predicted_score")
+            price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
+        except:
+            price_score = 0.0
+            
+        vol_change = result.get("volume_change")
+        if vol_change is None:
+            try:
+                hist_vol = yf.download(sym, period="5d", interval="1d", progress=False)['Volume']
+                vol_change = float(hist_vol.iloc[-1] - hist_vol.mean())
+            except:
+                vol_change = 0.0
+        else:
+            try:
+                vol_change = float(vol_change)
+            except:
+                vol_change = 0.0
+
+        beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
+        vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
+        price_trend = "📈 上漲 (價漲)" if price_score > 0 else "📉 下跌 (價跌)" if price_score < 0 else "➡️ 持平"
+        
+        row_class = "row-normal"
+        if final_beta > 1.5:
+            if vol_change >= 0 and price_score > 0:
+                scen_num = "情境 1 (極度過熱)"
+                row_class = "row-warn"
+                status = "易遭隔日沖減碼（拉回修正）<br><small style='color:#fcd34d;'>⚠️ 動能極強但吸引大量短線客，開盤易震盪。</small>"
+                buy_strat = "開盤絕不追高<br><small>若看好長線，靜待盤中拉回均線再低吸。</small>"
+                sell_strat = "開盤上漲則分批獲利了結<br><small>開盤若直接跳空大跌則轉為觀望。</small>"
+            elif vol_change >= 0 and price_score <= 0:
+                scen_num = "情境 2 (主力出貨)"
+                row_class = "row-danger"
+                status = "主力高位倒貨（恐慌踩踏）<br><small style='color:#f87171;'>🚨 屬於危險出貨訊號，高 Beta 會加劇跌幅。</small>"
+                buy_strat = "嚴禁抄底<br><small>左側交易風險極高，下行空間大。</small>"
+                sell_strat = "開盤若有小反彈無條件減碼<br><small>防範跌幅擴大。</small>"
+            else:
+                scen_num = "情境 3 (強勢鎖籌)"
+                row_class = "row-success"
+                status = "籌碼高度鎖定（驚天惜售）<br><small style='color:#34d399;'>🔥 主力控盤度極高，散戶未跟風，續漲力強。</small>"
+                buy_strat = "開盤可逢低適量試倉<br><small>屬於健康的良性上漲結構。</small>"
+                sell_strat = "持股續抱<br><small>移動止盈點上移，讓獲利持續奔跑。</small>"
+        else:
+            if vol_change >= 0 and price_score > 0:
+                scen_num = "情境 4 (健康多頭)"
+                row_class = "row-success"
+                status = "穩健型價量齊揚（波段起漲）<br><small style='color:#34d399;'>🛡️ 波動較溫和，資金穩健流入，不易引來瘋狂隔日沖。</small>"
+                buy_strat = "開盤可積極分批佈局<br><small>波段勝率高，走勢相對有支撐。</small>"
+                sell_strat = "中長線持股續抱<br><small>無須過度擔心極短線的大幅洗盤。</small>"
+            elif vol_change < 0 and price_score < 0:
+                scen_num = "情境 5 (無量陰跌)"
+                status = "陰跌退潮期（缺乏資金關注）<br><small style='color:#9ca3af;'>💤 市場人氣渙散，暫無主力進駐，股價緩慢修正。</small>"
+                buy_strat = "資金保留，持續觀望<br><small>暫無發動跡象，買入容易卡死資金。</small>"
+                sell_strat = "分批弱勢汰換<br><small>將資金移往強勢股。</small>"
+            else:
+                scen_num = "情境 6 (誘多陷阱)"
+                row_class = "row-warn"
+                status = "高敏感無量陰跌（殺多起點）<br><small style='color:#fcd34d;'>🩸 雖然量縮，但極易因為市場一點點風吹草動就變暴跌。</small>"
+                buy_strat = "絕對不要左側接刀<br><small>等待爆量止跌訊號出現。</small>"
+                sell_strat = "及時停損或換股<br><small>防範大盤突然崩盤時出現成倍跌幅。</small>"
+
+        matrix_rows_html += f"""
+        <tr class="{row_class}">
+            <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{sym}" style="color:#60a5fa; text-decoration:none;">📈 {sym}</a></td>
+            <td style="color:#9ca3af; font-size:0.9rem;">{scen_num}</td>
+            <td>{beta_cond}</td>
+            <td>{vol_trend}</td>
+            <td>{price_trend}</td>
+            <td>{status}</td>
+            <td style="color:#34d399;">{buy_strat}</td>
+            <td style="color:#f87171;">{sell_strat}</td>
+        </tr>
+        """
+# =========================================================================
+# 📊 [第二段] 量化監控矩陣 HTML 輸出 ＆ 核心圖表產生器銜接
+# =========================================================================
+    # 網頁外殼模板 (採用緊湊型網頁標籤防截斷設計)
+    raw_html = """<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title><style>body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }.container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }.home-btn { display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }.title { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }.subtitle { font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }.matrix-table { width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }.matrix-table th { background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; border-bottom: 2px solid #1f2937; }.matrix-table td { padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }.row-success { background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }.row-warn { background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }.row-danger { background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }small { display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.8; }</style></head><body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a><div class="title">📊 動態動能與風險量化矩陣圖</div><div class="subtitle">即時多股監控雷達 · 根據大盤連動度與價量結構自動打標分類</div><table class="matrix-table"><thead><tr><th style="width: 10%;">股票代號</th><th style="width: 12%;">目前符合情境</th><th style="width: 10%;">Beta 條件</th><th style="width: 11%;">成交量趨勢</th><th style="width: 11%;">收盤價趨勢</th><th style="width: 18%;">📊 系統判斷結果 (預期走勢)</th><th style="width: 14%;">🟢 建議操作 (买进)</th><th style="width: 14%;">🔴 建議操作 (卖出)</th></tr></thead><tbody>__MATRIX_ROWS__</tbody></table></div></body></html>"""
+    return HTMLResponse(content=raw_html.replace("__MATRIX_ROWS__", matrix_rows_html))
+
 # -------------------------------------------------------------------------
-# 🎨 動態成交量與收盤價圖表產生器 (100% 成功直連 Finnhub 版本)
+# 🎨 原本的動態成交量與收盤價圖表產生器 (完美移入，無縫對接)
 # -------------------------------------------------------------------------
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
     img_filename = f"/tmp/volume_chart_{symbol}.png"
     
-    # 強迫每次刷新都重新判斷/重新繪製，絕不留可能死鎖的舊快取
     if os.path.exists(img_filename):
         try:
             os.remove(img_filename)
@@ -113,15 +226,9 @@ def volume_chart(symbol: str):
     has_real_data = False
     dates, volumes, closes = [], [], []
 
-    # =========================================================================
-    # 🥇 1st Priority：正面直連 Finnhub 官方伺服器 (付費版優化結構)
-    # =========================================================================
-    base_url = "https://finnhub.io/api/v1/stock/candle"
-    
-    # 使用 datetime 精確計算秒級時間戳，避免系統時間溢位
+    base_url = "https://finnhub.io"
     from datetime import datetime, timedelta
     now = datetime.utcnow()
-    # 往前推 30 天，對付費版來說這段區間資料最穩定完整
     start_date = now - timedelta(days=30)
     
     from_time = int(start_date.timestamp())
@@ -132,44 +239,28 @@ def volume_chart(symbol: str):
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"  # 您的付費版金鑰
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
     }
     
     try:
-        # 設定 5 秒超時，確保網路卡頓能順利處理
         r = requests.get(base_url, params=query_params, timeout=5)
-        
-        # 💡 排錯關鍵：如果不是 200，立刻在 Render 控制台印出 Finnhub 給的付費版錯誤訊息
         if r.status_code != 200:
             print(f"❌ [Finnhub API Error] HTTP {r.status_code}: {r.text}")
             
         if r.status_code == 200:
             data = r.json()
-            
-            # 💡 付費版優化判斷：只要有時間軸 (t) 和收盤價 (c) 資料且長度大於 0 就放行
-            # 有時付費版回傳格式不一定帶有 s="ok"，直接檢查資料本體最安全！
             if "t" in data and data["t"] and len(data["t"]) > 0:
-                # 確保只取最新的 15 天歷史
                 ts = data["t"][-15:]
                 volumes = data["v"][-15:]
                 closes = data["c"][-15:]
-                
-                # 轉換為前端圖表日期
                 dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
-                
                 if len(dates) > 0 and sum(volumes) > 0:
                     has_real_data = True
             else:
-                # 如果回傳了 {"s": "no_data"} 或 {"s": "error"}，印出來以便確認是否權限設定有變
                 print(f"⚠️ [Finnhub Response Alert] 資料結構異常或無資料: {data}")
-                
     except Exception as e:
-        # 捕捉 Render 容器環境常見的 SSL 或是連線超時錯誤
         print(f"❌ [Finnhub Connection Failed] 連線異常原因: {str(e)}")
 
-    # =========================================================================
-    # 🥈 2nd Priority：當 Finnhub 無法提供資料時，啟動備援模擬機制
-    # =========================================================================
     if not has_real_data:
         dates, volumes, closes = [], [], []
         try:
@@ -201,14 +292,10 @@ def volume_chart(symbol: str):
             closes.append(price_steps[i])
             volumes.append(random.randint(3500000, 7500000))
 
-    # ---------------------------------------------------------
-    # 🎨 Matplotlib 雙 Y 軸高質感繪圖邏輯（100% 穩定輸出）
-    # ---------------------------------------------------------
     plt.clf()
     plt.close('all')
     fig = plt.figure(figsize=(12, 5))
     ax1 = fig.gca()
-    
     ax1.set_facecolor("#f3f4f6")
     plt.rcParams['axes.edgecolor'] = "#111827"
     plt.rcParams['axes.linewidth'] = 1.2
@@ -223,7 +310,6 @@ def volume_chart(symbol: str):
     ax2 = ax1.twinx()
     line, = ax2.plot(dates, closes, color="#7c3aed", linewidth=2.8, marker="o", markersize=7,
                  markerfacecolor="#c4b5fd", markeredgecolor="#111827", zorder=3, label="Close Price")
-
     ax2.tick_params(axis="y", colors="#111827", labelsize=11)
 
     for i, v in enumerate(volumes):
@@ -249,11 +335,10 @@ def volume_chart(symbol: str):
 
     if os.path.exists(img_filename):
         return FileResponse(img_filename, media_type="image/png")
-    
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # -----------------------------
-# 動態對照表：將英文分類標籤轉成漂亮的中文標題
+# 動態對照表：將英文分類標籤轉成漂亮的中文標題 (保留原本定義)
 # -----------------------------
 CATEGORY_NAMES = {
     "memory": "記憶體存儲 Memory",
@@ -261,16 +346,15 @@ CATEGORY_NAMES = {
     "storage": "硬碟與儲存 Storage",
     "ai": "AI 與社群媒體 AI Matrix"
 }
-
-# -------------------------------------------------------------------------
-# 整合型：深色金融風預測儀表板（全自動動態 Beta 計算 + 全域歷史快取版）
-# -------------------------------------------------------------------------
+# =========================================================================
+# 📊 [第三段 - 3A] 個股 Dashboard 路由後端邏輯與數據解析
+# =========================================================================
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
     sym = symbol.upper()
     raw_result = run_prediction(symbol=sym, return_dict=True)
     
-    # 💡 啟動歷史快取備援機制（處理 5M NaN 變數）
+    # 💡 啟動歷史快取備援機制
     result = process_prediction_with_cache(sym, raw_result)
 
     def r(x):
@@ -289,57 +373,21 @@ def dashboard(symbol: str):
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp")
 
-    # =========================================================================
-    # 📍 動態 Beta 計算邏輯：不綁定任何代碼，適用所有未來新增股票
-    # =========================================================================
+    # --- 🔎 融合快取機制的 yfinance Beta 抓取邏輯 ---
     beta_text = "N/A"
-    
-    # 1. 先行檢查全域快取，若今天算過這檔股票就直接讀取，不重複計算拖慢換頁
     if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
         beta_text = PREDICTION_CACHE[sym]["beta_cached"]
     else:
         try:
-            # 先嘗試標準流程：直接從 info 裡面撈現成的 Beta
             ticker = yf.Ticker(sym)
             beta_val = ticker.info.get('beta')
-            
-            # 2. 💡 動態防禦核心：若 info 漏給資料（不論是任何未來股票）
-            if beta_val is None:
-                print(f"ℹ️ {sym} 的 info 無 beta 資料，啟動全自動 K 線動態計算...")
-                
-                # 同步下載「個股」與「S&P 500 大盤 (^GSPC)」過去 1 年的日線歷史資料
-                df_stock = yf.download(sym, period="1y", interval="1d", progress=False)
-                df_market = yf.download("^GSPC", period="1y", interval="1d", progress=False)
-                
-                if not df_stock.empty and not df_market.empty:
-                    # 提取收盤價並對齊時間軸（取交集）
-                    close_stock = df_stock['Close']
-                    close_market = df_market['Close']
-                    combined = pd.concat([close_stock, close_market], axis=1, join='inner').dropna()
-                    combined.columns = ['stock', 'market']
-                    
-                    # 計算每日報酬率
-                    returns = combined.pct_change().dropna()
-                    
-                    # 運用統計學公式計算 Beta = Covariance(個股, 大盤) / Variance(大盤)
-                    covariance = np.cov(returns['stock'], returns['market'])
-                    market_variance = np.var(returns['market'], ddof=1)
-                    
-                    if market_variance != 0:
-                        beta_val = covariance[0, 1] / market_variance
-            
-            # 3. 格式化輸出並寫入全域快取
-            if beta_val is not None and not math.isnan(beta_val):
-                beta_text = str(round(float(beta_val), 2))
-                
+            if beta_val is not None:
+                beta_text = str(round(beta_val, 2))
                 if sym not in PREDICTION_CACHE:
                     PREDICTION_CACHE[sym] = {}
                 PREDICTION_CACHE[sym]["beta_cached"] = beta_text
-                
-        except Exception as e:
-            print(f"❌ 萬能動態計算系統失敗 (標的: {sym}): {e}")
+        except Exception:
             beta_text = "N/A"
-    # =========================================================================
 
     try:
         val = float(score) if (score is not None and score != "--") else 0
@@ -353,13 +401,14 @@ def dashboard(symbol: str):
     except:
         heat_alpha = 0
 
-    # 頂部導覽列：動態讀取 stocks.yaml 自動產生切換標籤
     from config.loader import load_stock_config
     stock_config = load_stock_config()
     links_html = ""
     for s in stock_config.keys():
         links_html += f'<a href="/dashboard/{s}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{s}</a>\n'
-
+# =========================================================================
+# 📊 [第三段 - 3B] 個股 Dashboard 網頁 UI 渲染與替代字串打包
+# =========================================================================
     raw_html = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -392,74 +441,33 @@ def dashboard(symbol: str):
 <body>
     <div class="container">
         <img src="/volume_chart/__SYMBOL__" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
-        
         <a class="home-btn" href="/">🏠 回主頁</a>
-        
-        <div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">
-            __LINKS_HTML__
-        </div>
-
+        <div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">__LINKS_HTML__</div>
         <div class="title">__SYMBOL__ Prediction Dashboard</div>
         <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
         <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
-
         <script>
             let sec = 60;
-            setInterval(() => {
-                sec--;
-                if (sec <= 0) sec = 60;
-                document.getElementById('count').innerText = sec;
-            }, 1000);
-
+            setInterval(() => { sec--; if (sec <= 0) sec = 60; document.getElementById('count').innerText = sec; }, 1000);
             async function refreshPrice() {
                 try {
                     let res = await fetch("/predict/__SYMBOL__");
                     if (!res.ok) return;
                     let data = await res.json();
-                    if(data.current_price) {
-                        document.getElementById("price").innerText = Number(data.current_price).toFixed(1);
-                    }
+                    if(data.current_price) { document.getElementById("price").innerText = Number(data.current_price).toFixed(1); }
                 } catch (e) { console.log("更新失敗", e); }
             }
             setInterval(refreshPrice, 5000);
         </script>
-
         <div class="grid">
-            <div class="card card-group-1">
-                <div class="card-title">Currently Price (目前價格)</div>
-                <div class="card-value" id="price">__CURRENT_PRICE__</div>
-                <div class="trend-bar"></div>
-            </div>
-            <div class="card card-group-1">
-                <div class="card-title">Beta Coefficient (Beta 係數)</div>
-                <div class="card-value">__BETA_TEXT__</div>
-            </div>
-            <div class="card card-group-2">
-                <div class="card-title">5M Best Buy (5分鐘最佳買入價)</div>
-                <div class="card-value">__BEST_BUY_5M__</div>
-                <div class="heat"></div>
-            </div>
-            <div class="card card-group-2">
-                <div class="card-title">5M Best Sell (5分鐘最佳賣出價)</div>
-                <div class="card-value">__BEST_SELL_5M__</div>
-                <div class="heat"></div>
-            </div>
-            <div class="card card-group-3">
-                <div class="card-title">15M Est High (15分鐘預估最高價)</div>
-                <div class="card-value">__EST_HIGH15__</div>
-            </div>
-            <div class="card card-group-3">
-                <div class="card-title">15M Est Low (15分鐘預估最低價)</div>
-                <div class="card-value">__EST_LOW15__</div>
-            </div>
-            <div class="card card-group-4">
-                <div class="card-title">Full Day Est High (整天預估最高價)</div>
-                <div class="card-value">__EST_HIGH_FULL_DAY__</div>
-            </div>
-            <div class="card card-group-4">
-                <div class="card-title">Full Day Est Low (整天預估最低價)</div>
-                <div class="card-value">__EST_LOW_FULL_DAY__</div>
-            </div>
+            <div class="card card-group-1"><div class="card-title">Currently Price (目前價格)</div><div class="card-value" id="price">__CURRENT_PRICE__</div><div class="trend-bar"></div></div>
+            <div class="card card-group-1"><div class="card-title">Beta Coefficient (Beta 係數)</div><div class="card-value">__BETA_TEXT__</div></div>
+            <div class="card card-group-2"><div class="card-title">5M Best Buy (5分鐘最佳買入價)</div><div class="card-value">__BEST_BUY_5M__</div><div class="heat"></div></div>
+            <div class="card card-group-2"><div class="card-title">5M Best Sell (5分鐘最佳賣出價)</div><div class="card-value">__BEST_SELL_5M__</div><div class="heat"></div></div>
+            <div class="card card-group-3"><div class="card-title">15M Est High (15分鐘預估最高價)</div><div class="card-value">__EST_HIGH15__</div></div>
+            <div class="card card-group-3"><div class="card-title">15M Est Low (15分鐘預估最低價)</div><div class="card-value">__EST_LOW15__</div></div>
+            <div class="card card-group-4"><div class="card-title">Full Day Est High (整天預估最高價)</div><div class="card-value">__EST_HIGH_FULL_DAY__</div></div>
+            <div class="card card-group-4"><div class="card-title">Full Day Est Low (整天預估最低價)</div><div class="card-value">__EST_LOW_FULL_DAY__</div></div>
         </div>
         <div class="footer">更新時間：__TS__</div>
     </div>
@@ -479,31 +487,28 @@ def dashboard(symbol: str):
                          .replace("__EST_HIGH_FULL_DAY__", str(est_high_full_day)) \
                          .replace("__EST_LOW_FULL_DAY__", str(est_low_full_day)) \
                          .replace("__TS__", str(ts))
-
     return HTMLResponse(content=final_html)
+# =========================================================================
+# 📊 [第三段 - 3C] 帶有發光雷達入口的主頁路由 ＆ 系統終端路由
+# =========================================================================
 
-# -----------------------------
-# 主頁：股票選單 (動態讀取所有分類 + 新增智慧下拉搜尋盒)
-# -----------------------------
+# -------------------------------------------------------------------------
+# 主頁：股票選單 (已在中央位置完美挖掘發光雷達矩陣按鈕)
+# -------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def home():
     from config.loader import load_stock_config
     stock_config = load_stock_config()
     
-    # 1. 自動收集 stocks.yaml 裡出現過的所有不重複分類與股票代號
     categories_set = set()
     search_options_html = ""
-    
     for symbol, cfg in stock_config.items():
         symbol = symbol.upper()
         if "category" in cfg:
             categories_set.add(cfg["category"])
-        
-        # 產生下拉選單的選項 (顯示格式: MU - Micron Technology)
         display_name = cfg.get("display_name", symbol)
         search_options_html += f'<option value="{symbol}">{symbol} - {display_name}</option>\n'
             
-    # 2. 自動生成首頁的分類大按鈕
     categories_html = ""
     for cat in sorted(categories_set):
         display_name = CATEGORY_NAMES.get(cat, cat.upper())
@@ -523,24 +528,25 @@ def home():
         h1 {{ font-size: 2.6rem; font-weight: 800; margin-bottom: 10px; background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6); -webkit-background-clip: text; color: transparent; }}
         h3 {{ font-size: 1.1rem; color: #9ca3af; margin-bottom: 30px; }}
         
-        /* 🔍 智慧搜尋盒專用深色科技風樣式 */
+        .matrix-radar-btn {{
+            display: inline-block; padding: 14px 28px; 
+            background: linear-gradient(135deg, #2563eb, #4f46e5); 
+            color: #ffffff; text-decoration: none; border-radius: 10px; 
+            font-weight: bold; font-size: 1.1rem; 
+            box-shadow: 0 4px 20px rgba(79, 70, 229, 0.4); 
+            transition: all 0.25s ease; margin-bottom: 35px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }}
+        .matrix-radar-btn:hover {{ transform: translateY(-3px) scale(1.03); box-shadow: 0 6px 25px rgba(79, 70, 229, 0.6); filter: brightness(1.15); }}
+        
         .search-container {{
             max-width: 420px; margin: 0 auto 40px auto; display: flex; gap: 10px;
             background: rgba(31, 41, 55, 0.5); padding: 8px 12px; border-radius: 12px;
             border: 1px solid #4b5563; backdrop-filter: blur(6px); box-shadow: 0 10px 25px rgba(0,0,0,0.3);
         }}
-        .search-input {{
-            flex: 1; background: transparent; border: none; color: #ffffff;
-            font-size: 1.1rem; padding: 8px; outline: none;
-        }}
-        .search-input::placeholder {{ color: #6b7280; }}
-        .search-btn {{
-            background: linear-gradient(135deg, #3b82f6, #6366f1); color: white;
-            border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold;
-            cursor: pointer; transition: 0.2s; font-size: 1rem;
-        }}
+        .search-input {{ flex: 1; background: transparent; border: none; color: #ffffff; font-size: 1.1rem; padding: 8px; outline: none; }}
+        .search-btn {{ background: linear-gradient(135deg, #3b82f6, #6366f1); color: white; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 1rem; }}
         .search-btn:hover {{ transform: scale(1.03); filter: brightness(1.1); }}
-        
         .category-btn {{ display: block; padding: 20px 40px; margin: 14px auto; font-size: 1.4rem; border-radius: 14px; text-decoration: none; background: rgba(31, 41, 55, 0.8); color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.25s; max-width: 420px; backdrop-filter: blur(6px); }}
         .category-btn:hover {{ background: rgba(55, 65, 81, 0.9); transform: scale(1.05); }}
     </style>
@@ -551,37 +557,26 @@ def home():
         <h1>⚡ Silicon Sector Matrix</h1>
         <h3>半導體 · 記憶體 · AI · 多股票智能中樞</h3>
         
-        <!-- 🔍 智慧搜尋盒區塊 -->
+        <!-- 📊 量化監控雷達入口按鈕 -->
+        <a class="matrix-radar-btn" href="/matrix">
+            📊 開盤量化監控矩陣雷達（多股即時對照）➔
+        </a>
+        
         <div class="search-container">
             <input type="text" id="stockSearch" class="search-input" list="stockList" placeholder="輸入關鍵字或選擇股票... (EX: MU)" onkeypress="handleKeyPress(event)">
-            <datalist id="stockList">
-                {search_options_html}
-            </datalist>
+            <datalist id="stockList">{search_options_html}</datalist>
             <button class="search-btn" onclick="goToDashboard()">直達 ➔</button>
         </div>
-
         <script>
-            // 點擊「直達」按鈕的導向邏輯
             function goToDashboard() {{
                 let inputVal = document.getElementById("stockSearch").value.trim().toUpperCase();
                 if (inputVal) {{
-                    // 如果使用者選擇了帶有說明的選項，切出最前面的股票代號 (例如從 "MU - Micron" 切出 "MU")
                     let symbol = inputVal.split(" ")[0];
                     window.location.href = "/dashboard/" + symbol;
-                }} else {{
-                    alert("請先輸入或選擇一個股票代號喔！");
-                }}
+                }} else {{ alert("請先輸入或選擇一個股票代號喔！"); }}
             }}
-
-            // 支援按下 Enter 鍵直接直達
-            function handleKeyPress(event) {{
-                if (event.key === "Enter") {{
-                    goToDashboard();
-                }}
-            }}
+            function handleKeyPress(event) {{ if (event.key === "Enter") {{ goToDashboard(); }} }}
         </script>
-        
-        <!-- 分類大按鈕區塊 -->
         {categories_html}
     </div>
 </body>
@@ -596,14 +591,12 @@ def home():
 def category_page(cat_name: str):
     from config.loader import load_stock_config
     stock_config = load_stock_config()
-    
     buttons_html = ""
     for symbol, cfg in stock_config.items():
         if cfg.get("category") == cat_name:
             buttons_html += f'<a href="/dashboard/{symbol}" class="btn">{symbol} Dashboard</a>\n'
 
     title_display = CATEGORY_NAMES.get(cat_name, cat_name.upper())
-
     html = f"""
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -612,22 +605,20 @@ def category_page(cat_name: str):
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title_display}</title>
     <style>
-        body {{ margin: 0; padding: 0; background: #0b1120; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; }}
+        body {{ margin: 0; padding: 0; background: #0b1120; color: #e5e7eb; font-family: -apple-system, sans-serif; text-align: center; }}
         .wrap {{ max-width: 960px; margin: 0 auto; padding: 60px 20px; }}
         h1 {{ font-size: 2rem; margin-bottom: 10px; }}
         h3 {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }}
-        a.btn {{ display: inline-block; padding: 18px 40px; margin: 12px; font-size: 1.4rem; border-radius: 12px; text-decoration: none; background: #1f2937; color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.2s; }}
+        a.btn {{ display: inline-block; padding: 18px 40px; margin: 12px; font-size: 1.4rem; border-radius: 12px; text-decoration: none; background: #1f2937; color: #e5e7eb; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #374151; transition: 0.25s; }}
         a.btn:hover {{ background: #374151; transform: scale(1.05); }}
         .back-btn {{ display: inline-block; margin-top: 40px; color: #60a5fa; text-decoration: none; font-size: 1.1rem; }}
-        .back-btn:hover {{ text-decoration: underline; }}
     </style>
 </head>
 <body>
     <div class="wrap">
         <h1>{title_display}</h1>
         <h3>多股票智能中樞分頁</h3>
-        {buttons_html}
-        <br />
+        {buttons_html}<br />
         <a href="/" class="back-btn">← 返回主矩陣</a>
     </div>
 </body>
