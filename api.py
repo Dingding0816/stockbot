@@ -73,145 +73,9 @@ def predict_symbol(symbol: str):
     sym = symbol.upper()
     raw_result = run_prediction(symbol=sym, return_dict=True)
     return process_prediction_with_cache(sym, raw_result)
-
 # =========================================================================
-# 📊 全新量化監控矩陣頁面路由 (/matrix) - 後端數據與核心打標邏輯
+# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (100% 成功直連版)
 # =========================================================================
-@app.get("/matrix", response_class=HTMLResponse)
-def quant_matrix_page():
-    from config.loader import load_stock_config
-    
-    matrix_rows_html = ""
-    try:
-        stock_config = load_stock_config()
-    except Exception as e:
-        return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
-    
-    for sym in stock_config.keys():
-        sym = sym.upper()
-        try:
-            raw_result = run_prediction(symbol=sym, return_dict=True)
-            result = process_prediction_with_cache(sym, raw_result)
-        except Exception as e:
-            print(f"預測模型執行失敗 ({sym}): {e}")
-            result = {}
-
-        beta_val = None
-        if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
-            try:
-                beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
-            except:
-                pass
-        
-        if beta_val is None:
-            try:
-                ticker = yf.Ticker(sym)
-                beta_val = ticker.info.get('beta')
-                if beta_val is None:
-                    df_stock = yf.download(sym, period="1y", interval="1d", progress=False)
-                    df_market = yf.download("^GSPC", period="1y", interval="1d", progress=False)
-                    if not df_stock.empty and not df_market.empty:
-                        combined = pd.concat([df_stock['Close'], df_market['Close']], axis=1, join='inner').dropna()
-                        combined.columns = ['stock', 'market']
-                        returns = combined.pct_change().dropna()
-                        cov = np.cov(returns['stock'], returns['market'])
-                        m_var = np.var(returns['market'], ddof=1)
-                        if m_var != 0:
-                            # 💡 防禦優化：安全取出協方差標量，防範降維錯誤
-                            val_cov = cov[0, 1] if cov.ndim > 1 else cov
-                            beta_val = val_cov / m_var
-                if beta_val is not None and not math.isnan(beta_val):
-                    PREDICTION_CACHE[sym]["beta_cached"] = str(round(float(beta_val), 2))
-            except Exception as e:
-                print(f"Beta計算失敗 ({sym}): {e}")
-                beta_val = 1.0
-                
-        final_beta = float(beta_val) if beta_val is not None else 1.0
-        
-        try:
-            price_score = result.get("predicted_score")
-            price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
-        except:
-            price_score = 0.0
-            
-        vol_change = result.get("volume_change")
-        if vol_change is None:
-            try:
-                hist_vol = yf.download(sym, period="5d", interval="1d", progress=False)['Volume']
-                vol_change = float(hist_vol.iloc[-1] - hist_vol.mean())
-            except:
-                vol_change = 0.0
-        else:
-            try:
-                vol_change = float(vol_change)
-            except:
-                vol_change = 0.0
-
-        beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
-        vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
-        price_trend = "📈 上漲 (價漲)" if price_score > 0 else "📉 下跌 (價跌)" if price_score < 0 else "➡️ 持平"
-        
-        row_class = "row-normal"
-        if final_beta > 1.5:
-            if vol_change >= 0 and price_score > 0:
-                scen_num = "情境 1 (極度過熱)"
-                row_class = "row-warn"
-                status = "易遭隔日沖減碼（拉回修正）<br><small style='color:#fcd34d;'>⚠️ 動能極強但吸引大量短線客，開盤易震盪。</small>"
-                buy_strat = "開盤絕不追高<br><small>若看好長線，靜待盤中拉回均線再低吸。</small>"
-                sell_strat = "開盤上漲則分批獲利了結<br><small>開盤若直接跳空大跌則轉為觀望。</small>"
-            elif vol_change >= 0 and price_score <= 0:
-                scen_num = "情境 2 (主力出貨)"
-                row_class = "row-danger"
-                status = "主力高位倒貨（恐慌踩踏）<br><small style='color:#f87171;'>🚨 屬於危險出貨訊號，高 Beta 會加劇跌幅。</small>"
-                buy_strat = "嚴禁抄底<br><small>左側交易風險極高，下行空間大。</small>"
-                sell_strat = "開盤若有小反彈無條件減碼<br><small>防範跌幅擴大。</small>"
-            else:
-                scen_num = "情境 3 (強勢鎖籌)"
-                row_class = "row-success"
-                status = "籌碼高度鎖定（驚天惜售）<br><small style='color:#34d399;'>🔥 主力控盤度極高，散戶未跟風，續漲力強。</small>"
-                buy_strat = "開盤可逢低適量試倉<br><small>屬於健康的良性上漲結構。</small>"
-                sell_strat = "持股續抱<br><small>移動止盈點上移，讓獲利持續奔跑。</small>"
-        else:
-            if vol_change >= 0 and price_score > 0:
-                scen_num = "情境 4 (健康多頭)"
-                row_class = "row-success"
-                status = "穩健型價量齊揚（波段起漲）<br><small style='color:#34d399;'>🛡️ 波動較溫和，資金穩健流入，不易引來瘋狂隔日沖。</small>"
-                buy_strat = "開盤可積極分批佈局<br><small>波段勝率高，走勢相對有支撐。</small>"
-                sell_strat = "中長線持股續抱<br><small>無須過度擔心極短線的大幅洗盤。</small>"
-            elif vol_change < 0 and price_score < 0:
-                scen_num = "情境 5 (無量陰跌)"
-                status = "陰跌退潮期（缺乏資金關注）<br><small style='color:#9ca3af;'>💤 市場人氣渙散，暫無主力進駐，股價緩慢修正。</small>"
-                buy_strat = "資金保留，持續觀望<br><small>暫無發動跡象，買入容易卡死資金。</small>"
-                sell_strat = "分批弱勢汰換<br><small>將資金移往強勢股。</small>"
-            else:
-                scen_num = "情境 6 (誘多陷阱)"
-                row_class = "row-warn"
-                status = "高敏感無量陰跌（殺多起點）<br><small style='color:#fcd34d;'>🩸 雖然量縮，但極易因為市場一點點風吹草動就變暴跌。</small>"
-                buy_strat = "絕對不要左側接刀<br><small>等待爆量止跌訊號出現。</small>"
-                sell_strat = "及時停損或換股<br><small>防範大盤突然崩盤時出現成倍跌幅。</small>"
-
-        matrix_rows_html += f"""
-        <tr class="{row_class}">
-            <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{sym}" style="color:#60a5fa; text-decoration:none;">📈 {sym}</a></td>
-            <td style="color:#9ca3af; font-size:0.9rem;">{scen_num}</td>
-            <td>{beta_cond}</td>
-            <td>{vol_trend}</td>
-            <td>{price_trend}</td>
-            <td>{status}</td>
-            <td style="color:#34d399;">{buy_strat}</td>
-            <td style="color:#f87171;">{sell_strat}</td>
-        </tr>
-        """
-# =========================================================================
-# 📊 [第二段] 量化監控矩陣 HTML 輸出 ＆ 核心圖表產生器銜接
-# =========================================================================
-    # 網頁外殼模板 (採用緊湊型網頁標籤防截斷設計)
-    raw_html = """<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title><style>body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }.container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }.home-btn { display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }.title { font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }.subtitle { font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }.matrix-table { width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }.matrix-table th { background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; border-bottom: 2px solid #1f2937; }.matrix-table td { padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }.row-success { background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }.row-warn { background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }.row-danger { background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }small { display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.8; }</style></head><body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a><div class="title">📊 動態動能與風險量化矩陣圖</div><div class="subtitle">即時多股監控雷達 · 根據大盤連動度與價量結構自動打標分類</div><table class="matrix-table"><thead><tr><th style="width: 10%;">股票代號</th><th style="width: 12%;">目前符合情境</th><th style="width: 10%;">Beta 條件</th><th style="width: 11%;">成交量趨勢</th><th style="width: 11%;">收盤價趨勢</th><th style="width: 18%;">📊 系統判斷結果 (預期走勢)</th><th style="width: 14%;">🟢 建議操作 (买进)</th><th style="width: 14%;">🔴 建議操作 (卖出)</th></tr></thead><tbody>__MATRIX_ROWS__</tbody></table></div></body></html>"""
-    return HTMLResponse(content=raw_html.replace("__MATRIX_ROWS__", matrix_rows_html))
-
-# -------------------------------------------------------------------------
-# 🎨 原本的動態成交量與收盤價圖表產生器 (完美移入，無縫對接)
-# -------------------------------------------------------------------------
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
     symbol = symbol.upper()
@@ -338,7 +202,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # -----------------------------
-# 動態對照表：將英文分類標籤轉成漂亮的中文標題 (保留原本定義)
+# 動態對照表 (保留原始定義)
 # -----------------------------
 CATEGORY_NAMES = {
     "memory": "記憶體存儲 Memory",
@@ -347,15 +211,11 @@ CATEGORY_NAMES = {
     "ai": "AI 與社群媒體 AI Matrix"
 }
 # =========================================================================
-# 📊 [修正防禦版 - 3A] 盤中時段自動切換短週期即時監控邏輯 (嚴謹時區辨識)
+# 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) 核心時間判定與智慧打標
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
     from config.loader import load_stock_config
-    import yfinance as yf
-    import numpy as np
-    import pandas as pd
-    from datetime import datetime, time as dt_time
     import pytz
     
     matrix_rows_html = ""
@@ -364,12 +224,11 @@ def quant_matrix_page():
     except Exception as e:
         return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
         
-    # 💡 1. 獲取完全對齊的美東（紐約）當前即時時間
+    # 💡 嚴謹紐約時區精算
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     is_market_open = False
     
-    # 💡 2. 嚴謹判定美股常規交易時段：周一至周五，且 24 小時制嚴格落在 09:30:00 到 16:00:00 之間
     if now_est.weekday() < 5:
         start_trade = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
         end_trade = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
@@ -387,7 +246,6 @@ def quant_matrix_page():
             print(f"預測模型執行失敗 ({sym}): {e}")
             result = {}
 
-        # 安全獲取/計算 Beta 係數 (防禦快取版)
         beta_val = None
         if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
             try: beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
@@ -405,20 +263,16 @@ def quant_matrix_page():
                         returns = combined.pct_change().dropna()
                         cov = np.cov(returns['stock'], returns['market'])
                         m_var = np.var(returns['market'], ddof=1)
-                        if m_var != 0: beta_val = cov / m_var
+                        if m_var != 0: beta_val = cov[0, 1] / m_var
                 if beta_val is not None and not math.isnan(beta_val):
                     PREDICTION_CACHE[sym]["beta_cached"] = str(round(float(beta_val), 2))
             except:
                 beta_val = 1.0
         final_beta = float(beta_val) if beta_val is not None else 1.0
 
-        # 🎛️ 動態數據切換：此處已完美修復！沒開盤時 100% 讀取原本的系統 1D 長週期預測結果
-        price_score = 0.0
-        vol_change = 0.0
-        
+        price_score, vol_change = 0.0, 0.0
         if is_market_open:
             try:
-                # 只有真正開盤，才會拉取個股 15 分鐘即時 K 線
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
                     price_score = float(df_15m['Close'].iloc[-1] - df_15m['Close'].iloc[-2])
@@ -426,10 +280,8 @@ def quant_matrix_page():
                     vol_change = float(df_15m['Volume'].iloc[-1] - avg_vol_15m)
             except Exception as e:
                 print(f"⚠️ {sym} 15M 即時數據解析失敗: {e}")
-                price_score = 0.0
-                vol_change = 0.0
+                price_score, vol_change = 0.0, 0.0
         else:
-            # 💡 盤前/盤後：完全回到原本的穩定預測值，此時 MU 將回歸「價漲量增」的情境 1
             try:
                 price_score = result.get("predicted_score")
                 price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
@@ -445,9 +297,6 @@ def quant_matrix_page():
                 try: vol_change = float(vol_change)
                 except: vol_change = 0.0
 
-# =========================================================================
-# 📊 [第三段 - 3B] 監控矩陣 6 種情境打標渲染 ＆ HTML 外殼與 60 秒自刷腳本
-# =========================================================================
         beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
         price_trend = "📈 上漲 (價漲)" if price_score > 0 else "📉 下跌 (價跌)" if price_score < 0 else "➡️ 持平"
@@ -476,7 +325,7 @@ def quant_matrix_page():
             if vol_change >= 0 and price_score > 0:
                 scen_num = "情境 4 (健康多頭)"
                 row_class = "row-success"
-                status = "穩健型價量齊揚（波段起漲）<br><small style='color:#34d399;'>🛡️ 波動較溫和，資金穩健流入，不易引來瘋狂隔日沖。</small>"
+                status = "穩健型價量齊揚（波段起起）<br><small style='color:#34d399;'>🛡️ 波動較溫和，資金穩健流入，不易引來瘋狂隔日沖。</small>"
                 buy_strat = "開盤可積極分批佈局<br><small>波段勝率高，走勢相對有支撐。</small>"
                 sell_strat = "中長線持股續抱<br><small>無須過度擔心極短線的大幅洗盤。</small>"
             elif vol_change < 0 and price_score < 0:
@@ -487,7 +336,7 @@ def quant_matrix_page():
             else:
                 scen_num = "情境 6 (誘多陷阱)"
                 row_class = "row-warn"
-                status = "高敏感無量陰跌（殺多起點）<br><small style='color:#fcd34d;'>🩸 雖然量縮，但極易因為市場一點點風吹角動就變暴跌。</small>"
+                status = "高敏感無量陰跌（殺多起點）<br><small style='color:#fcd34d;'>🩸 雖然量縮，但極易因為市場一點點風吹草動就變暴跌。</small>"
                 buy_strat = "絕對不要左側接刀<br><small>等待爆量止跌訊號出現。</small>"
                 sell_strat = "及時停損或換股<br><small>防範大盤突然崩盤時出現成倍跌幅。</small>"
 
@@ -503,12 +352,160 @@ def quant_matrix_page():
             <td style="color:#f87171;">{sell_strat}</td>
         </tr>
         """
-
-    raw_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title><style>body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }}.container {{ max-width: 1200px; margin: 0 auto; padding: 30px 20px; }}.home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }}.title {{ font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}.subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }}.matrix-table {{ width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }}.matrix-table th {{ background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; }}.matrix-table td {{ padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }}.row-success {{ background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }}.row-warn {{ background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }}.row-danger {{ background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }}small {{ display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.8; }}.mode-badge {{ display: inline-block; padding: 6px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 20px; color: #93c5fd; font-weight: bold; font-size: 0.9rem; margin-bottom: 16px; }}</style></head><body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a><div class="title">📊 動態動能與風險量化矩陣圖</div><div class="mode-badge">{mode_text}</div><div class="subtitle">即時多股監控雷達 · 網頁每 60 秒全自動重新整理刷新 · 當前倒數：<span id="matrix-timer">60</span>秒</div><table class="matrix-table"><thead><tr><th style="width: 10%;">股票代號</th><th style="width: 12%;">目前符合情境</th><th style="width: 10%;">Beta 條件</th><th style="width: 11%;">成交量趨勢</th><th style="width: 11%;">收盤價趨勢</th><th style="width: 18%;">📊 系統判斷結果</th><th style="width: 14%;">🟢 建議買進</th><th style="width: 14%;">🔴 建議賣出</th></tr></thead><tbody>__MATRIX_ROWS__</tbody></table></div><script>let matrixSec = 60; setInterval(() => {{ matrixSec--; if (matrixSec <= 0) {{ location.reload(); }} else {{ document.getElementById("matrix-timer").innerText = matrixSec; }} }}, 1000);</script></body></html>"""
-    return HTMLResponse(content=raw_html.replace("__MATRIX_ROWS__", matrix_rows_html))
-
 # =========================================================================
-# 📊 [第三段 - 3C] 首頁發光入口按鈕 ＆ 系統終端路由 (動態監控升級版)
+# 📊 [第二段 - 2C] 監控矩陣 HTML UI 模板 ＆ 頂部發光標籤動態注入
+# =========================================================================
+    raw_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title><style>body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }}.container {{ max-width: 1200px; margin: 0 auto; padding: 30px 20px; }}.home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }}.title {{ font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}.subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }}.matrix-table {{ width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }}.matrix-table th {{ background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; }}.matrix-table td {{ padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }}.row-success {{ background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }}.row-warn {{ background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }}.row-danger {{ background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }}small {{ display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.8; }}.mode-badge {{ display: inline-block; padding: 6px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 20px; color: #93c5fd; font-weight: bold; font-size: 0.9rem; margin-bottom: 16px; }}</style></head><body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a><div class="title">📊 動態動能與風險量化矩陣圖</div><div class="subtitle">即時多股監控雷達 · 網頁每 60 秒全自動重新整理刷新 · 當前倒數：<span id="matrix-timer">60</span>秒</div><table class="matrix-table"><thead><tr><th style="width: 10%;">股票代號</th><th style="width: 12%;">目前符合情境</th><th style="width: 10%;">Beta 條件</th><th style="width: 11%;">成交量趨勢</th><th style="width: 11%;">收盤價趨勢</th><th style="width: 18%;">📊 系統判斷結果</th><th style="width: 14%;">🟢 建議買進</th><th style="width: 14%;">🔴 建議賣出</th></tr></thead><tbody>__MATRIX_ROWS__</tbody></table></div><script>let matrixSec = 60; setInterval(() => {{ matrixSec--; if (matrixSec <= 0) {{ location.reload(); }} else {{ document.getElementById("matrix-timer").innerText = matrixSec; }} }}, 1000);</script></body></html>"""
+    
+    # 💡 完美注入：用 .replace() 精確地在大標題正下方插入發光的狀態徽章
+    final_html = raw_html.replace("__MATRIX_ROWS__", matrix_rows_html) \
+                         .replace('<div class="title">📊 動態動能與風險量化矩陣圖</div>', 
+                                  f'<div class="title">📊 動態動能與風險量化矩陣圖</div>\n<div class="mode-badge">{mode_text}</div>')
+    return HTMLResponse(content=final_html)
+# =========================================================================
+# 📊 [第三段 - 3A] 滿血復活：個股 Dashboard 路由後端邏輯與數據解析
+# =========================================================================
+@app.get("/dashboard/{symbol}", response_class=HTMLResponse)
+def dashboard(symbol: str):
+    sym = symbol.upper()
+    raw_result = run_prediction(symbol=sym, return_dict=True)
+    
+    # 💡 啟動歷史快取備援機制（自動清洗 NaN 並用有效歷史數據補位）
+    result = process_prediction_with_cache(sym, raw_result)
+
+    def r(x):
+        if x is None:
+            return "--"
+        return round(x, 1) if isinstance(x, (int, float)) else x
+
+    current_price = r(result.get("current_price"))
+    best_buy_5m = r(result.get("best_buy_5m"))
+    best_sell_5m = r(result.get("best_sell_5m"))
+    est_high15 = r(result.get("true_high15"))
+    est_low15 = r(result.get("true_low15"))
+    est_high_full_day = r(result.get("true_high_full"))
+    est_low_full_day = r(result.get("true_low_full"))
+    score = r(result.get("predicted_score"))
+    actual = r(result.get("actual_result"))
+    ts = result.get("timestamp")
+
+    # --- 🔎 智慧防禦型 Beta 係數抓取 (先看快取，沒有再抓 info) ---
+    beta_text = "N/A"
+    if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
+        beta_text = PREDICTION_CACHE[sym]["beta_cached"]
+    else:
+        try:
+            ticker = yf.Ticker(sym)
+            beta_val = ticker.info.get('beta')
+            if beta_val is not None:
+                beta_text = str(round(beta_val, 2))
+                if sym not in PREDICTION_CACHE:
+                    PREDICTION_CACHE[sym] = {}
+                PREDICTION_CACHE[sym]["beta_cached"] = beta_text
+        except Exception:
+            beta_text = "N/A"
+
+    try:
+        val = float(score) if (score is not None and score != "--") else 0
+        trend_percent = max(min(val * 100 + 50, 100), 0)
+    except:
+        trend_percent = 50
+
+    try:
+        act_val = float(actual) if (actual is not None and actual != "--") else 0
+        heat_alpha = min(abs(act_val) * 5, 0.8)
+    except:
+        heat_alpha = 0
+
+    from config.loader import load_stock_config
+    stock_config = load_stock_config()
+    links_html = ""
+    for s in stock_config.keys():
+        links_html += f'<a href="/dashboard/{s}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{s}</a>\n'
+# =========================================================================
+# 📊 [第三段 - 3B] 個股 Dashboard 網頁 UI 結構與變數替換
+# =========================================================================
+    raw_html = """
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__SYMBOL__ Prediction Dashboard</title>
+    <style>
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1120; color: #e5e7eb; }
+        .home-btn { display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }
+        .home-btn:hover { background: #374151; }
+        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+        .countdown { font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }
+        .title { font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
+        .subtitle { font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+        .card { border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }
+        .card:hover { transform: scale(1.03); }
+        .card-title { font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }
+        .card-value { font-size: 1.6rem; font-weight: 600; }
+        .trend-bar { height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 __TREND_PERCENT__%, #4caf50 __TREND_PERCENT__%); }
+        .heat { height: 10px; border-radius: 5px; margin-top: 10px; background: rgba(255, 255, 255, __HEAT_ALPHA__); }
+        .footer { margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }
+        .card-group-1 { background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); backdrop-filter: blur(6px); }
+        .card-group-2 { background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); backdrop-filter: blur(6px); }
+        .card-group-3 { background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); backdrop-filter: blur(6px); }
+        .card-group-4 { background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); backdrop-filter: blur(6px); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="/volume_chart/__SYMBOL__" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
+        <a class="home-btn" href="/">🏠 回主頁</a>
+        <div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">__LINKS_HTML__</div>
+        <div class="title">__SYMBOL__ Prediction Dashboard</div>
+        <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
+        <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
+        <script>
+            let sec = 60;
+            setInterval(() => { sec--; if (sec <= 0) sec = 60; document.getElementById('count').innerText = sec; }, 1000);
+            async function refreshPrice() {
+                try {
+                    let res = await fetch("/predict/__SYMBOL__");
+                    if (!res.ok) return;
+                    let data = await res.json();
+                    if(data.current_price) { document.getElementById("price").innerText = Number(data.current_price).toFixed(1); }
+                } catch (e) { console.log("更新失敗", e); }
+            }
+            setInterval(refreshPrice, 5000);
+        </script>
+        <div class="grid">
+            <div class="card card-group-1"><div class="card-title">Currently Price (目前價格)</div><div class="card-value" id="price">__CURRENT_PRICE__</div><div class="trend-bar"></div></div>
+            <div class="card card-group-1"><div class="card-title">Beta Coefficient (Beta 係數)</div><div class="card-value">__BETA_TEXT__</div></div>
+            <div class="card card-group-2"><div class="card-title">5M Best Buy (5分鐘最佳買入價)</div><div class="card-value">__BEST_BUY_5M__</div><div class="heat"></div></div>
+            <div class="card card-group-2"><div class="card-title">5M Best Sell (5分鐘最佳賣出價)</div><div class="card-value">__BEST_SELL_5M__</div><div class="heat"></div></div>
+            <div class="card card-group-3"><div class="card-title">15M Est High (15分鐘預估最高價)</div><div class="card-value">__EST_HIGH15__</div></div>
+            <div class="card card-group-3"><div class="card-title">15M Est Low (15分鐘預估最低價)</div><div class="card-value">__EST_LOW15__</div></div>
+            <div class="card card-group-4"><div class="card-title">Full Day Est High (整天預估最高價)</div><div class="card-value">__EST_HIGH_FULL_DAY__</div></div>
+            <div class="card card-group-4"><div class="card-title">Full Day Est Low (整天預估最低價)</div><div class="card-value">__EST_LOW_FULL_DAY__</div></div>
+        </div>
+        <div class="footer">更新時間：__TS__</div>
+    </div>
+</body>
+</html>
+"""
+    final_html = raw_html.replace("__SYMBOL__", str(symbol)) \
+                         .replace("__TREND_PERCENT__", str(trend_percent)) \
+                         .replace("__HEAT_ALPHA__", str(heat_alpha)) \
+                         .replace("__LINKS_HTML__", str(links_html)) \
+                         .replace("__CURRENT_PRICE__", str(current_price)) \
+                         .replace("__BETA_TEXT__", str(beta_text)) \
+                         .replace("__BEST_BUY_5M__", str(best_buy_5m)) \
+                         .replace("__BEST_SELL_5M__", str(best_sell_5m)) \
+                         .replace("__EST_HIGH15__", str(est_high15)) \
+                         .replace("__EST_LOW15__", str(est_low15)) \
+                         .replace("__EST_HIGH_FULL_DAY__", str(est_high_full_day)) \
+                         .replace("__EST_LOW_FULL_DAY__", str(est_low_full_day)) \
+                         .replace("__TS__", str(ts))
+    return HTMLResponse(content=final_html)
+# =========================================================================
+# 📊 [第三段 - 3C] 首頁發光入口按鈕 ＆ 系統終端路由 (全功能復活版)
 # =========================================================================
 
 # -------------------------------------------------------------------------
@@ -590,7 +587,7 @@ def home():
             function goToDashboard() {{
                 let inputVal = document.getElementById("stockSearch").value.trim().toUpperCase();
                 if (inputVal) {{
-                    let symbol = inputVal.split(" ");
+                    let symbol = inputVal.split(" ")[0];
                     window.location.href = "/dashboard/" + symbol;
                 }} else {{ alert("請先輸入或選擇一個股票代號喔！"); }}
             }}
@@ -648,4 +645,3 @@ def category_page(cat_name: str):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
