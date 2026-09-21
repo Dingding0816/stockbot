@@ -232,12 +232,25 @@ def dashboard(symbol: str):
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp")
 
-    direction_text = "持平"
-    if score is not None:
-        if score > 0:
-            direction_text = "上漲 📈"
-        elif score < 0:
-            direction_text = "下跌 📉"
+    # --- 🔎 【新增/修改區塊】使用 Finnhub 付費 API 抓取 Beta 係數 ---
+    beta_text = "N/A"
+    try:
+        # 使用你最上方已經宣告好的 FINNHUB_API_KEY 與 requests
+        finnhub_url = f"https://finnhub.io{symbol}&metric=all&token={FINNHUB_API_KEY}"
+        response = requests.get(finnhub_url, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            # 從 Finnhub 的回傳結構中精準取出 beta 指標
+            beta_val = data.get("metric", {}).get("beta")
+            if beta_val is not None:
+                beta_text = str(round(beta_val, 2))  # 四捨五入至小數點後兩位
+        else:
+            print(f"Finnhub API 錯誤，狀態碼: {response.status_code}")
+    except Exception as e:
+        print(f"無法從 Finnhub 抓取 {symbol} 的 Beta 係數: {e}")
+        beta_text = "錯誤"
+    # ----------------------------------------------------------------
 
     trend_percent = max(min((score if score is not None else 0) * 100 + 50, 100), 0)
     heat_alpha = min(abs(actual if actual is not None else 0) * 5, 0.8)
@@ -320,9 +333,10 @@ def dashboard(symbol: str):
                 <div class="card-value" id="price">__CURRENT_PRICE__</div>
                 <div class="trend-bar"></div>
             </div>
+            <!-- 💡 將 Direction 欄位修正為 Beta 係數，綁定 __BETA_TEXT__ -->
             <div class="card card-group-1">
-                <div class="card-title">Direction (預估方向)</div>
-                <div class="card-value">__DIRECTION_TEXT__</div>
+                <div class="card-title">Beta Coefficient (Beta 係數)</div>
+                <div class="card-value">__BETA_TEXT__</div>
             </div>
             <div class="card card-group-2">
                 <div class="card-title">5M Best Buy (5分鐘最佳買入價)</div>
@@ -357,12 +371,13 @@ def dashboard(symbol: str):
 </html>
 """
     # 用安全、精準的 .replace() 逐一塞入變數，徹底斷絕大括號錯位 Bug
+    # 💡 移除舊有 __DIRECTION_TEXT__，完全替換為 Finnhub 的 __BETA_TEXT__
     final_html = raw_html.replace("__SYMBOL__", str(symbol)) \
                          .replace("__TREND_PERCENT__", str(trend_percent)) \
                          .replace("__HEAT_ALPHA__", str(heat_alpha)) \
                          .replace("__LINKS_HTML__", str(links_html)) \
                          .replace("__CURRENT_PRICE__", str(current_price)) \
-                         .replace("__DIRECTION_TEXT__", str(direction_text)) \
+                         .replace("__BETA_TEXT__", str(beta_text)) \
                          .replace("__BEST_BUY_5M__", str(best_buy_5m)) \
                          .replace("__BEST_SELL_5M__", str(best_sell_5m)) \
                          .replace("__EST_HIGH15__", str(est_high15)) \
