@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timedelta
 import random
 import requests
+import math  # 用來安全檢查 nan
 
 import matplotlib
 matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式，解決 savefig 崩潰
@@ -37,12 +38,60 @@ app.add_middleware(
 )
 
 # -------------------------------------------------------------------------
-# 📈 預測 API 端點
+# 💾 【新增】全域預測歷史快取機制 (預防 NaN 斷訊)
+# -------------------------------------------------------------------------
+# 結構會是：{"MXL": {"best_buy_5m": 83.2, ...}, "META": {...}}
+PREDICTION_CACHE = {}
+
+def process_prediction_with_cache(symbol: str, raw_result: dict) -> dict:
+    """
+    核心快取容錯機制：
+    1. 遍歷本次預測結果的所有欄位。
+    2. 如果欄位值是 NaN，且過去有成功存下歷史數值，則自動用歷史值替換。
+    3. 如果欄位值是有效數字，則更新快取庫，作為下一次的備援。
+    4. 最終移除所有 NaN，確保完全 JSON 相容。
+    """
+    sym = symbol.upper()
+    
+    # 如果這個股票從來沒有建立過快取紀錄，先幫它建立一個空字典
+    if sym not in PREDICTION_CACHE:
+        PREDICTION_CACHE[sym] = {}
+        
+    cleaned_result = {}
+    
+    for key, value in raw_result.items():
+        is_nan = False
+        
+        # 判斷是否為 NaN
+        if isinstance(value, float) and math.isnan(value):
+            is_nan = True
+            
+        if is_nan or value is None:
+            # 💡 觸發容錯：如果是 NaN 或空值，去撈上一次成功的歷史紀錄
+            if key in PREDICTION_CACHE[sym]:
+                cleaned_result[key] = PREDICTION_CACHE[sym][key]
+                print(f"⚠️ [{sym}] 欄位 '{key}' 當前為 NaN，已成功自動替換為歷史紀錄: {cleaned_result[key]}")
+            else:
+                # 如果連歷史紀錄都沒有，就只能先給 None (前端會顯示 --)
+                cleaned_result[key] = None
+        else:
+            # 💡 欄位正常：將有效數值存入快取庫，並放入結果中
+            PREDICTION_CACHE[sym][key] = value
+            cleaned_result[key] = value
+            
+    return cleaned_result
+
+# -------------------------------------------------------------------------
+# 📈 預測 API 端點（高頻刷新整合快取版）
 # -------------------------------------------------------------------------
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
-    return run_prediction(symbol=symbol.upper(), return_dict=True)
-
+    sym = symbol.upper()
+    raw_result = run_prediction(symbol=sym, return_dict=True)
+    
+    # 💡 透過快取防火牆清洗：如果是 NaN 就用上一次的值，並確保 Render 不再噴 JSON 錯誤
+    return process_prediction_with_cache(sym, raw_result)
+    
 # -------------------------------------------------------------------------
 # 🎨 動態成交量與收盤價圖表產生器 (100% 成功直連 Finnhub 版本)
 # -------------------------------------------------------------------------
@@ -211,14 +260,19 @@ CATEGORY_NAMES = {
 }
 
 # -----------------------------
-# 整合型：深色金融風預測儀表板（安全字串替換版）
+# 整合型：深色金融風預測儀表板（歷史快取備援版）
 # -----------------------------
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
-    symbol = symbol.upper()
-    result = run_prediction(symbol=symbol, return_dict=True)
+    sym = symbol.upper()
+    raw_result = run_prediction(symbol=sym, return_dict=True)
+    
+    # 💡 第一次進入網頁時，也同樣啟動歷史快取備援機制
+    result = process_prediction_with_cache(sym, raw_result)
 
     def r(x):
+        if x is None:
+            return "--"
         return round(x, 1) if isinstance(x, (int, float)) else x
 
     current_price = r(result.get("current_price"))
@@ -233,23 +287,34 @@ def dashboard(symbol: str):
     ts = result.get("timestamp")
 
     direction_text = "持平"
-    if score is not None:
-        if score > 0:
-            direction_text = "上漲 📈"
-        elif score < 0:
-            direction_text = "下跌 📉"
+    if score is not None and score != "--":
+        try:
+            if float(score) > 0:
+                direction_text = "上漲 📈"
+            elif float(score) < 0:
+                direction_text = "下跌 📉"
+        except:
+            pass
 
-    trend_percent = max(min((score if score is not None else 0) * 100 + 50, 100), 0)
-    heat_alpha = min(abs(actual if actual is not None else 0) * 5, 0.8)
+    try:
+        val = float(score) if (score is not None and score != "--") else 0
+        trend_percent = max(min(val * 100 + 50, 100), 0)
+    except:
+        trend_percent = 50
+
+    try:
+        act_val = float(actual) if (actual is not None and actual != "--") else 0
+        heat_alpha = min(abs(act_val) * 5, 0.8)
+    except:
+        heat_alpha = 0
 
     # 頂部導覽列：動態讀取 stocks.yaml 自動產生切換標籤
     from config.loader import load_stock_config
     stock_config = load_stock_config()
     links_html = ""
-    for sym in stock_config.keys():
-        links_html += f'<a href="/dashboard/{sym}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{sym}</a>\n'
+    for s in stock_config.keys():
+        links_html += f'<a href="/dashboard/{s}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{s}</a>\n'
 
-    # 使用標準 HTML 原始碼，不使用容易出錯的 f-string 大括號
     raw_html = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -281,7 +346,6 @@ def dashboard(symbol: str):
 </head>
 <body>
     <div class="container">
-        <!-- 橫跨整張網頁的精美歷史圖表，完美安置在最上方 -->
         <img src="/volume_chart/__SYMBOL__" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
         
         <a class="home-btn" href="/">🏠 回主頁</a>
@@ -305,6 +369,7 @@ def dashboard(symbol: str):
             async function refreshPrice() {
                 try {
                     let res = await fetch("/predict/__SYMBOL__");
+                    if (!res.ok) return;
                     let data = await res.json();
                     if(data.current_price) {
                         document.getElementById("price").innerText = Number(data.current_price).toFixed(1);
@@ -356,7 +421,6 @@ def dashboard(symbol: str):
 </body>
 </html>
 """
-    # 用安全、精準的 .replace() 逐一塞入變數，徹底斷絕大括號錯位 Bug
     final_html = raw_html.replace("__SYMBOL__", str(symbol)) \
                          .replace("__TREND_PERCENT__", str(trend_percent)) \
                          .replace("__HEAT_ALPHA__", str(heat_alpha)) \
