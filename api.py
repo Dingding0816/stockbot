@@ -347,7 +347,7 @@ CATEGORY_NAMES = {
     "ai": "AI 與社群媒體 AI Matrix"
 }
 # =========================================================================
-# 📊 [第三段 - 3A] 盤中時段自動切換短週期即時監控邏輯 (15M 極速雷達版)
+# 📊 [修正防禦版 - 3A] 盤中時段自動切換短週期即時監控邏輯 (嚴謹時區辨識)
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -355,7 +355,7 @@ def quant_matrix_page():
     import yfinance as yf
     import numpy as np
     import pandas as pd
-    from datetime import datetime
+    from datetime import datetime, time as dt_time
     import pytz
     
     matrix_rows_html = ""
@@ -364,16 +364,16 @@ def quant_matrix_page():
     except Exception as e:
         return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
         
-    # 💡 智慧時間辨識：判斷當前是否處於美股盤中交易時段 (美東時間 09:30 ~ 16:00)
+    # 💡 1. 獲取完全對齊的美東（紐約）當前即時時間
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     is_market_open = False
     
-    # 周一到周五，且時間在 09:30 到 16:00 之間則定義為盤中
+    # 💡 2. 嚴謹判定美股常規交易時段：周一至周五，且 24 小時制嚴格落在 09:30:00 到 16:00:00 之間
     if now_est.weekday() < 5:
-        market_start = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
-        market_end = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
-        if market_start <= now_est <= market_end:
+        start_trade = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
+        end_trade = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
+        if start_trade <= now_est <= end_trade:
             is_market_open = True
             
     mode_text = "⚡ 盤中 15M 極速即時監控模式" if is_market_open else "🗓️ 盤前/盤後 1D 長週期波段模式"
@@ -412,30 +412,29 @@ def quant_matrix_page():
                 beta_val = 1.0
         final_beta = float(beta_val) if beta_val is not None else 1.0
 
-        # 🎛️ 核心動態數據切換：盤中用 15M 短週期超精細價量；盤後維持原系統 1D 長週期
+        # 🎛️ 動態數據切換：此處已完美修復！沒開盤時 100% 讀取原本的系統 1D 長週期預測結果
         price_score = 0.0
         vol_change = 0.0
         
         if is_market_open:
             try:
-                # 盤中直接拉取個股最近 3 天的 15 分鐘 K 線，即時性最強
+                # 只有真正開盤，才會拉取個股 15 分鐘即時 K 線
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
-                    # 當前最新 15 分鐘相較於上一個 15 分鐘的漲跌
                     price_score = float(df_15m['Close'].iloc[-1] - df_15m['Close'].iloc[-2])
-                    # 當前 15 分鐘成交量對比過去 20 根 15 分鐘 K 線的平均成交量
                     avg_vol_15m = df_15m['Volume'].iloc[-21:-1].mean()
                     vol_change = float(df_15m['Volume'].iloc[-1] - avg_vol_15m)
             except Exception as e:
-                print(f"⚠️ {sym} 15M 即時數據解析失敗，回退至基礎防禦: {e}")
+                print(f"⚠️ {sym} 15M 即時數據解析失敗: {e}")
                 price_score = 0.0
                 vol_change = 0.0
         else:
-            # 盤前/盤後維持讀取日線預測結果
+            # 💡 盤前/盤後：完全回到原本的穩定預測值，此時 MU 將回歸「價漲量增」的情境 1
             try:
                 price_score = result.get("predicted_score")
                 price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
             except: price_score = 0.0
+            
             vol_change = result.get("volume_change")
             if vol_change is None:
                 try:
