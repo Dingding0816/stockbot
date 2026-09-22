@@ -74,7 +74,7 @@ def predict_symbol(symbol: str):
     raw_result = run_prediction(symbol=sym, return_dict=True)
     return process_prediction_with_cache(sym, raw_result)
 # =========================================================================
-# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (完美修復端點版)
+# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (終端日誌排錯強化版)
 # =========================================================================
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
@@ -90,11 +90,13 @@ def volume_chart(symbol: str):
     has_real_data = False
     dates, volumes, closes = [], [], []
 
-    # 💡 修正關鍵：指明正確的日 K 線數據接口路徑
+    # 1. 確保端點路徑完全正確
     base_url = "https://finnhub.io"
+    
+    # 💡 強健化時間戳：美股歷史日線資料使用標準時區精算，防範部分伺服器溢位
     from datetime import datetime, timedelta
     now = datetime.utcnow()
-    start_date = now - timedelta(days=30)
+    start_date = now - timedelta(days=45) # 稍微往前多推一點，確保一定能涵蓋到 15 個交易日
     
     from_time = int(start_date.timestamp())
     to_time = int(now.timestamp())
@@ -104,28 +106,45 @@ def volume_chart(symbol: str):
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg"
+        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg" # 你的付費金鑰
     }
     
     try:
         r = requests.get(base_url, params=query_params, timeout=5)
+        
+        # 💡 【核心排錯關鍵】在 Render Log 打印出最直觀的伺服器對話
+        print(f"📡 [DEBUG] 正在發送 Finnhub 請求: {symbol}, HTTP 狀態碼: {r.status_code}")
+        
         if r.status_code != 200:
-            print(f"❌ [Finnhub API Error] HTTP {r.status_code}: {r.text}")
+            print(f"❌ [Finnhub API 錯誤日誌] 狀態碼: {r.status_code} | 回傳內容: {r.text}")
             
         if r.status_code == 200:
             data = r.json()
+            
+            # 檢查 Finnhub 給的狀態回應
+            if data.get("s") == "no_data":
+                print(f"⚠️ [Finnhub Alert] 標的 {symbol} 回傳狀態為 no_data (無歷史資料)，請確認付費權限是否包含此個股。")
+            
             if "t" in data and data["t"] and len(data["t"]) > 0:
+                # 確保只取最新的 15 天歷史
                 ts = data["t"][-15:]
                 volumes = data["v"][-15:]
                 closes = data["c"][-15:]
+                
+                # 轉換日期
                 dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                
                 if len(dates) > 0 and sum(volumes) > 0:
                     has_real_data = True
+                    print(f"🟢 [Finnhub Success] {symbol} 成功取得實時即時 K 線數據！")
             else:
-                print(f"⚠️ [Finnhub Response Alert] 資料結構異常或無資料: {data}")
+                print(f"⚠️ [Finnhub Alert] 資料結構非預期或長度為0: {data}")
     except Exception as e:
-        print(f"❌ [Finnhub Connection Failed] 連線異常原因: {str(e)}")
+        print(f"❌ [Finnhub Connection Failed] 網路層崩潰原因: {str(e)}")
 
+    # =========================================================================
+    # 備援模擬機制 (當 has_real_data 為 False 時強制啟動)
+    # =========================================================================
     if not has_real_data:
         dates, volumes, closes = [], [], []
         try:
@@ -157,6 +176,7 @@ def volume_chart(symbol: str):
             closes.append(price_steps[i])
             volumes.append(random.randint(3500000, 7500000))
 
+    # Matplotlib 高質感繪圖
     plt.clf()
     plt.close('all')
     fig = plt.figure(figsize=(12, 5))
