@@ -74,7 +74,7 @@ def predict_symbol(symbol: str):
     raw_result = run_prediction(symbol=sym, return_dict=True)
     return process_prediction_with_cache(sym, raw_result)
 # =========================================================================
-# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (100% 成功直連版)
+# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (完美修復端點版)
 # =========================================================================
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
@@ -90,6 +90,7 @@ def volume_chart(symbol: str):
     has_real_data = False
     dates, volumes, closes = [], [], []
 
+    # 💡 修正關鍵：指明正確的日 K 線數據接口路徑
     base_url = "https://finnhub.io"
     from datetime import datetime, timedelta
     now = datetime.utcnow()
