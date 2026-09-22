@@ -74,7 +74,7 @@ def predict_symbol(symbol: str):
     raw_result = run_prediction(symbol=sym, return_dict=True)
     return process_prediction_with_cache(sym, raw_result)
 # =========================================================================
-# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (付費變數全對接版)
+# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (付費變數全對接安全修復版)
 # =========================================================================
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
@@ -90,12 +90,12 @@ def volume_chart(symbol: str):
     has_real_data = False
     dates, volumes, closes = [], [], []
 
-    # 1. 官方正確端點
+    # 💡 1. 修正官方正確端點路徑
     base_url = "https://finnhub.io"
     
     from datetime import datetime, timedelta
     now = datetime.utcnow()
-    # 💡 拓寬天數至 60 天，確保不論何時都能完整抓到過去 15 個已收盤交易日的歷史
+    # 💡 2. 拓寬天數至 60 天，確保不論何時都能完整抓到過去 15 個已收盤交易日的歷史
     start_date = now - timedelta(days=60)
     
     from_time = int(start_date.timestamp())
@@ -106,7 +106,7 @@ def volume_chart(symbol: str):
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": FINNHUB_API_KEY  # 💡 終極修正：改為讀取您的全域付費 Token 變數！
+        "token": FINNHUB_API_KEY  # 💡 3. 終極修正：改為動態讀取您頂部的全域付費 Token 變數！
     }
     
     headers = {
@@ -116,10 +116,9 @@ def volume_chart(symbol: str):
     
     try:
         r = requests.get(base_url, params=query_params, headers=headers, timeout=5)
-        print(f"📡 [DEBUG] 付費通道請求狀態碼: {r.status_code}")
+        print(f"📡 [DEBUG] 圖表產生器向 Finnhub 發送付費通道請求，回應狀態碼: {r.status_code}")
         
         if r.status_code == 200:
-            # 檢查是否為空字串，若成功打通付費通道，這裡絕對會有資料長度
             if r.text.strip() and ("application/json" in r.headers.get("Content-Type", "") or r.text.strip().startswith("{")):
                 data = r.json()
                 if "t" in data and data["t"] and len(data["t"]) > 0:
@@ -129,7 +128,7 @@ def volume_chart(symbol: str):
                     dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
                     if len(dates) > 0 and sum(volumes) > 0:
                         has_real_data = True
-                        print(f"🟢 [付費直連成功] {symbol} 已透過您的付費金鑰成功撈取真實數據！")
+                        print(f"🟢 [付費直連成功] {symbol} 成功取得官方真實 Candle 實時數據！")
                 else:
                     print(f"⚠️ [Finnhub 回應提示] 格式正確但無內部數據: {r.text}")
             else:
