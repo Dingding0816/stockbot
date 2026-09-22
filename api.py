@@ -242,7 +242,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) 核心時間判定與智慧打標 (Pandas 強健優化版)
+# 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) 核心時間判定與智慧直觀決策版
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -318,7 +318,6 @@ def quant_matrix_page():
                 price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
             except: price_score = 0.0
             
-            # 💡 【優化修正核心】精準提取 Pandas 標量數字，徹底消滅 FutureWarning
             vol_change = result.get("volume_change")
             if vol_change is None:
                 try:
@@ -327,23 +326,18 @@ def quant_matrix_page():
                         v_series = hist_df['Volume']
                         if isinstance(v_series, pd.DataFrame):
                             v_series = v_series.iloc[:, 0]
-                            
                         last_vol = float(v_series.iloc[-1])
                         mean_vol = float(v_series.mean())
                         vol_change = last_vol - mean_vol
                     else:
                         vol_change = 0.0
-                except Exception as e:
-                    print(f"⚠️ {sym} 歷史成交量計算異常: {e}")
+                except:
                     vol_change = 0.0
             else:
                 try:
-                    if hasattr(vol_change, "iloc"):
-                        vol_change = float(vol_change.iloc)
-                    else:
-                        vol_change = float(vol_change)
-                except:
-                    vol_change = 0.0
+                    if hasattr(vol_change, "iloc"): vol_change = float(vol_change.iloc)
+                    else: vol_change = float(vol_change)
+                except: vol_change = 0.0
 
         beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
@@ -354,39 +348,69 @@ def quant_matrix_page():
             if vol_change >= 0 and price_score > 0:
                 scen_num = "情境 1 (極度過熱)"
                 row_class = "row-warn"
-                status = "易遭隔日沖減碼（拉回修正）<br><small style='color:#fcd34d;'>⚠️ 動能極強但吸引大量短線客，開盤易震盪。</small>"
-                buy_strat = "開盤絕不追高<br><small>若看好長線，靜待盤中拉回均線再低吸。</small>"
-                sell_strat = "開盤上漲則分批獲利了結<br><small>開盤若直接跳空大跌則轉為觀望。</small>"
+                if is_market_open:
+                    status = "<b>動能極強，但短線有主力獲利了結</b>"
+                    buy_strat = "<b>🚫 不要追高！</b><br><small>手癢也給我忍住，等盤中拉回。</small>"
+                    sell_strat = "<b>💰 分批停利！</b><br><small>至少先落袋為安一部分。</small>"
+                else:
+                    status = "易遭隔日沖減碼（拉回修正）"
+                    buy_strat = "開盤絕不追高"
+                    sell_strat = "開盤上漲則分批獲利了結"
             elif vol_change >= 0 and price_score <= 0:
                 scen_num = "情境 2 (主力出貨)"
                 row_class = "row-danger"
-                status = "主力高位倒貨（恐慌踩踏）<br><small style='color:#f87171;'>🚨 屬於危險出貨訊號，高 Beta 會加劇跌幅。</small>"
-                buy_strat = "嚴禁抄底<br><small>左側交易風險極高，下行空間大。</small>"
-                sell_strat = "開盤若有小反彈無條件減碼<br><small>防範跌幅擴大。</small>"
+                if is_market_open:
+                    status = "<b>🚨 崩盤危險！主力正在瘋狂倒貨</b>"
+                    buy_strat = "<b>🛑 絕對禁買！</b><br><small>現在進場就是去送死，嚴禁抄底。</small>"
+                    sell_strat = "<b>⚡ 立刻砍倉 / 減碼！</b><br><small>有微弱反彈就快逃。</small>"
+                else:
+                    status = "主力高位倒貨（恐慌踩踏）"
+                    buy_strat = "嚴禁抄底"
+                    sell_strat = "開盤若有小反彈無條件減碼"
             else:
                 scen_num = "情境 3 (強勢鎖籌)"
                 row_class = "row-success"
-                status = "籌碼高度鎖定（驚天惜售）<br><small style='color:#34d399;'>🔥 主力控盤度極高，散戶未跟風，續漲力強。</small>"
-                buy_strat = "開盤可逢低適量試倉<br><small>屬於健康的良性上漲結構。</small>"
-                sell_strat = "持股續抱<br><small>移動止盈點上移，讓獲利持續奔跑。</small>"
+                if is_market_open:
+                    status = "<b>🔥 籌碼極度穩定！主力控盤惜售</b>"
+                    buy_strat = "<b>🛒 果斷加碼！</b><br><small>盤中只要有小震盪，就是買點。</small>"
+                    sell_strat = "<b>💎 死死抱緊！</b><br><small>不要被洗掉，防守線上移。</small>"
+                else:
+                    status = "籌碼高度鎖定（驚天惜售）"
+                    buy_strat = "開盤可逢低適量試倉"
+                    sell_strat = "持股續抱"
         else:
             if vol_change >= 0 and price_score > 0:
-                scen_num = "情green 4 (健康多頭)"
+                scen_num = "情境 4 (健康多頭)"
                 row_class = "row-success"
-                status = "穩健型價量齊揚（波段起起）<br><small style='color:#34d399;'>🛡️ 波動較溫和，資金穩健流入，不易引來瘋狂隔日沖。</small>"
-                buy_strat = "開盤可積極分批佈局<br><small>波段勝率高，走勢相對有支撐。</small>"
-                sell_strat = "中長線持股續抱<br><small>無須過度擔心極短線的大幅洗盤。</small>"
+                if is_market_open:
+                    status = "<b>🛡️ 穩健上漲，長線大波段起漲點</b>"
+                    buy_strat = "<b>🛍️ 積極建倉！</b><br><small>分批買進，這是最安全的結構。</small>"
+                    sell_strat = "<b>🧘 持股續抱！</b><br><small>中長線毫無賣出訊號。</small>"
+                else:
+                    status = "穩健型價量齊揚（波段起漲）"
+                    buy_strat = "開盤可積極分批佈局"
+                    sell_strat = "中長線持股續抱"
             elif vol_change < 0 and price_score < 0:
                 scen_num = "情境 5 (無量陰跌)"
-                status = "陰跌退潮期（缺乏資金關注）<br><small style='color:#9ca3af;'>💤 市場人氣渙散，暫無主力進駐，股價緩慢修正。</small>"
-                buy_strat = "資金保留，持續觀望<br><small>暫無發動跡象，買入容易卡死資金。</small>"
-                sell_strat = "分批弱勢汰換<br><small>將資金移往強勢股。</small>"
+                if is_market_open:
+                    status = "<b>市場無人氣，資金卡死毫無死水</b>"
+                    buy_strat = "<b>⏳ 完全觀望！</b><br><small>不要買，買了也是浪費時間。</small>"
+                    sell_strat = "<b>✂️ 直接換股！</b><br><small>盤中立刻汰弱留強。</small>"
+                else:
+                    status = "陰跌退潮期（缺乏資金關注）"
+                    buy_strat = "資金保留，持續觀望"
+                    sell_strat = "分批弱勢汰換"
             else:
                 scen_num = "情境 6 (誘多陷阱)"
                 row_class = "row-warn"
-                status = "高敏感無量陰跌（殺多起點）<br><small style='color:#fcd34d;'>🩸 雖然量縮，但極易因為市場一點點風吹草動就變暴跌。</small>"
-                buy_strat = "絕對不要左側接刀<br><small>等待爆量止跌訊號出現。</small>"
-                sell_strat = "及時停損或換股<br><small>防範大盤突然崩盤時出現成倍跌幅。</small>"
+                if is_market_open:
+                    status = "<b>🩸 隨時會大跳水！高 Beta 崩盤前兆</b>"
+                    buy_strat = "<b>0️⃣ 嚴禁碰這隻！</b><br><small>大盤一跳水這隻會跌最慘，絕不接刀。</small>"
+                    sell_strat = "<b>📉 果斷停損！</b><br><small>跌破前一根 K 線低點就必須離場。</small>"
+                else:
+                    status = "高敏感無量陰跌（殺多起點）"
+                    buy_strat = "絕對不要左側接刀"
+                    sell_strat = "及時停損或換股"
 
         matrix_rows_html += f"""
         <tr class="{row_class}">
