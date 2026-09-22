@@ -242,7 +242,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) 全時段目前價格統一版
+# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 昨收對比數據拉取段
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -301,14 +301,38 @@ def quant_matrix_page():
                 beta_val = 1.0
         final_beta = float(beta_val) if beta_val is not None else 1.0
 
-        # 🎛️ 智慧進化：不論開盤與否，統統展現「目前價格」！
         price_score = 0.0
         vol_change = 0.0
         price_trend_text = "➡️ 持平"
         
+        try:
+            ai_score_raw = result.get("predicted_score")
+            ai_score = float(ai_score_raw) if (ai_score_raw is not None and not isinstance(ai_score_raw, str)) else 0.0
+        except:
+            ai_score = 0.0
+        
+        # 💡 先撈歷史日 K 線以取得前一交易日收盤價
+        prev_close = None
+        try:
+            hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
+            if not hist_df.empty:
+                v_series = hist_df['Volume']
+                c_series = hist_df['Close']
+                if isinstance(v_series, pd.DataFrame): v_series = v_series.iloc[:, 0]
+                if isinstance(c_series, pd.DataFrame): c_series = c_series.iloc[:, 0]
+                
+                prev_close = float(c_series.iloc[-1])
+                last_vol = float(v_series.iloc[-1])
+                mean_vol = float(v_series.mean())
+                vol_change = last_vol - mean_vol
+        except:
+            pass
+# =========================================================================
+# 📊 [第二段 - 2B-2] 盤前現價VS昨收硬核物理對照 ＆ 6 大情境終極打標輸出
+# =========================================================================
         if is_market_open:
+            # ⚡ 盤中交易時段：維持 15M K線超敏銳均線偏離度計算
             try:
-                # ⚡ 盤中交易時段：依然拉取 15M K線進行超敏銳乖離計算
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
                     current_live_price = float(df_15m['Close'].iloc[-1])
@@ -322,48 +346,31 @@ def quant_matrix_page():
                     avg_vol_15m = df_15m['Volume'].iloc[-21:-1].mean()
                     vol_change = float(df_15m['Volume'].iloc[-1] - avg_vol_15m)
             except Exception as e:
-                print(f"⚠️ {sym} 15M 盤中目前價格獲取異常: {e}")
+                print(f"⚠️ {sym} 15M 盤中精算失敗: {e}")
         else:
-            # 💡 盤前/盤後時段：【精準改造】直接調用你 Dashboard 裡的目前價格！
+            # 💡 盤前/盤後時段：【終極改版】目前價格與前一天收盤價進行硬核物理對照！
             try:
                 current_live_price = result.get("current_price")
-                # 如果模型內有當前價格，直接拿來展示
-                if current_live_price is not None:
+                if current_live_price is not None and prev_close is not None:
                     current_live_price = float(current_live_price)
-                    price_score = result.get("predicted_score")
-                    price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
                     
-                    if price_score > 0: price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
-                    elif price_score < 0: price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
-                    else: price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
+                    # 💡 用實時現價扣除昨天收盤價
+                    price_diff = current_live_price - prev_close
+                    
+                    if price_diff > 0:
+                        price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
+                    elif price_diff < 0:
+                        price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
+                    else:
+                        price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                 else:
-                    price_trend_text = "➡️ N/A"
+                    current_live_price = float(current_live_price) if current_live_price is not None else 0.0
+                    price_trend_text = f"➡️ 觀察中 ({current_live_price:.1f})"
             except:
                 price_trend_text = "➡️ 讀取失敗"
             
-            # 盤前成交量變動計算
-            try:
-                price_score_raw = result.get("predicted_score")
-                price_score = float(price_score_raw) if (price_score_raw is not None and not isinstance(price_score_raw, str)) else 0.0
-            except: price_score = 0.0
-            
-            vol_change = result.get("volume_change")
-            if vol_change is None:
-                try:
-                    hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
-                    if not hist_df.empty:
-                        v_series = hist_df['Volume']
-                        if isinstance(v_series, pd.DataFrame): v_series = v_series.iloc[:, 0]
-                        last_vol = float(v_series.iloc[-1])
-                        mean_vol = float(v_series.mean())
-                        vol_change = last_vol - mean_vol
-                    else: vol_change = 0.0
-                except: vol_change = 0.0
-            else:
-                try:
-                    if hasattr(vol_change, "iloc"): vol_change = float(vol_change.iloc)
-                    else: vol_change = float(vol_change)
-                except: vol_change = 0.0
+            # 將分類判定錨定到 ai_score上，保留原本強大的 AI 情境打邊預判
+            price_score = ai_score
 
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
         beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
@@ -405,14 +412,14 @@ def quant_matrix_page():
                     sell_strat = "持股續抱"
         else:
             if vol_change >= 0 and price_score > 0:
-                scen_num = "情green 4 (健康多頭)"
+                scen_num = "情境 4 (健康多頭)"
                 row_class = "row-success"
                 if is_market_open:
                     status = "<b>🛡️ 目前價格穩健向上，大資金正在吸籌</b>"
                     buy_strat = "<b>🛍️ 積極建倉！</b><br><small>分批買進，這是最安全的獲利結構。</small>"
                     sell_strat = "<b>🧘 持股續抱！</b><br><small>長線多頭動能穩健，毫無賣出訊號。</small>"
                 else:
-                    status = "穩健型價量齊揚（波段起起）"
+                    status = "穩健型價量齊揚（波段起漲）"
                     buy_strat = "開盤可積極分批佈局"
                     sell_strat = "中長線持股續抱"
             elif vol_change < 0 and price_score < 0:
