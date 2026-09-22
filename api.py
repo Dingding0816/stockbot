@@ -242,7 +242,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 昨收對比數據拉取段
+# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 標量安全防禦拉取段
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -255,7 +255,6 @@ def quant_matrix_page():
     except Exception as e:
         return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
         
-    # 💡 嚴謹紐約時區精算
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     is_market_open = False
@@ -301,8 +300,7 @@ def quant_matrix_page():
                 beta_val = 1.0
         final_beta = float(beta_val) if beta_val is not None else 1.0
 
-        price_score = 0.0
-        vol_change = 0.0
+        price_score, vol_change = 0.0, 0.0
         price_trend_text = "➡️ 持平"
         
         try:
@@ -311,7 +309,6 @@ def quant_matrix_page():
         except:
             ai_score = 0.0
         
-        # 💡 先撈歷史日 K 線以取得前一交易日收盤價
         prev_close = None
         try:
             hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
@@ -321,56 +318,68 @@ def quant_matrix_page():
                 if isinstance(v_series, pd.DataFrame): v_series = v_series.iloc[:, 0]
                 if isinstance(c_series, pd.DataFrame): c_series = c_series.iloc[:, 0]
                 
-                prev_close = float(c_series.iloc[-1])
-                last_vol = float(v_series.iloc[-1])
+                prev_close = float(c_series.values[-1])
+                last_vol = float(v_series.values[-1])
                 mean_vol = float(v_series.mean())
-                vol_change = last_vol - mean_vol
+                vol_change = float(last_vol - mean_vol)
         except:
-            pass
+            vol_change = 0.0
+
 # =========================================================================
-# 📊 [第二段 - 2B-2] 盤前現價VS昨收硬核物理對照 ＆ 6 大情境終極打標輸出
+# 📊 [第二段 - 2B-2] 100% 阻斷 Series 錯誤之極速判斷打標與 HTML 輸出段
 # =========================================================================
         if is_market_open:
             # ⚡ 盤中交易時段：維持 15M K線超敏銳均線偏離度計算
             try:
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
-                    current_live_price = float(df_15m['Close'].iloc[-1])
-                    ma10_15m = df_15m['Close'].iloc[-11:-1].mean()
-                    price_score = current_live_price - ma10_15m
+                    c_15m = df_15m['Close']
+                    v_15m = df_15m['Volume']
+                    if isinstance(c_15m, pd.DataFrame): c_15m = c_15m.iloc[:, 0]
+                    if isinstance(v_15m, pd.DataFrame): v_15m = v_15m.iloc[:, 0]
+                    
+                    current_live_price = float(c_15m.values[-1])
+                    ma10_15m = float(c_15m.iloc[-11:-1].mean())
+                    price_score = float(current_live_price - ma10_15m)
                     
                     if price_score > 0: price_trend_text = f"📈 急漲 ({current_live_price:.1f})"
                     elif price_score < 0: price_trend_text = f"📉 急跌 ({current_live_price:.1f})"
                     else: price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                         
-                    avg_vol_15m = df_15m['Volume'].iloc[-21:-1].mean()
-                    vol_change = float(df_15m['Volume'].iloc[-1] - avg_vol_15m)
+                    avg_vol_15m = float(v_15m.iloc[-21:-1].mean())
+                    vol_change = float(v_15m.values[-1] - avg_vol_15m)
             except Exception as e:
                 print(f"⚠️ {sym} 15M 盤中精算失敗: {e}")
         else:
-            # 💡 盤前/盤後時段：【終極改版】目前價格與前一天收盤價進行硬核物理對照！
+            # 💡 盤前/盤後時段：目前價格與前一天收盤價進行物理硬核對照
             try:
                 current_live_price = result.get("current_price")
                 if current_live_price is not None and prev_close is not None:
                     current_live_price = float(current_live_price)
+                    price_diff = float(current_live_price - prev_close)
                     
-                    # 💡 用實時現價扣除昨天收盤價
-                    price_diff = current_live_price - prev_close
-                    
-                    if price_diff > 0:
-                        price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
-                    elif price_diff < 0:
-                        price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
-                    else:
-                        price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
+                    if price_diff > 0: price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
+                    elif price_diff < 0: price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
+                    else: price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                 else:
                     current_live_price = float(current_live_price) if current_live_price is not None else 0.0
                     price_trend_text = f"➡️ 觀察中 ({current_live_price:.1f})"
             except:
                 price_trend_text = "➡️ 讀取失敗"
             
-            # 將分類判定錨定到 ai_score上，保留原本強大的 AI 情境打邊預判
-            price_score = ai_score
+            # 盤前以模型的 AI 分數作為情境打標依據
+            price_score = float(ai_score)
+
+        # 💡 終極防禦安全網：強制將變數壓平為純單一數字，阻斷任何 Series 造成的邏輯判斷崩潰
+        try:
+            if hasattr(vol_change, "ndim") and vol_change.ndim > 0: vol_change = float(vol_change.iloc[0])
+            else: vol_change = float(vol_change)
+        except: vol_change = 0.0
+
+        try:
+            if hasattr(price_score, "ndim") and price_score.ndim > 0: price_score = float(price_score.iloc[0])
+            else: price_score = float(price_score)
+        except: price_score = 0.0
 
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
         beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
