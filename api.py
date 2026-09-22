@@ -242,7 +242,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 標量安全防禦拉取段
+# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 盤中前次現價對決數據段
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -255,6 +255,7 @@ def quant_matrix_page():
     except Exception as e:
         return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
         
+    # 💡 嚴謹紐約時區精算
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     is_market_open = False
@@ -300,7 +301,9 @@ def quant_matrix_page():
                 beta_val = 1.0
         final_beta = float(beta_val) if beta_val is not None else 1.0
 
-        price_score, vol_change = 0.0, 0.0
+        # 全時段數據容器初始化
+        price_score = 0.0
+        vol_change = 0.0
         price_trend_text = "➡️ 持平"
         
         try:
@@ -309,6 +312,7 @@ def quant_matrix_page():
         except:
             ai_score = 0.0
         
+        # 盤前保底昨收拉取
         prev_close = None
         try:
             hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
@@ -321,15 +325,15 @@ def quant_matrix_page():
                 prev_close = float(c_series.values[-1])
                 last_vol = float(v_series.values[-1])
                 mean_vol = float(v_series.mean())
-                vol_change = float(last_vol - mean_vol)
+                vol_change = last_vol - mean_vol
         except:
-            vol_change = 0.0
+            pass
 
 # =========================================================================
-# 📊 [第二段 - 2B-2] 100% 阻斷 Series 錯誤之極速判斷打標與 HTML 輸出段
+# 📊 [第二段 - 2B-2] 盤中前次現價對決 ＆ 6 大情境終極打標輸出
 # =========================================================================
         if is_market_open:
-            # ⚡ 盤中交易時段：維持 15M K線超敏銳均線偏離度計算
+            # ⚡ 盤中交易時段：【究極優化】目前價格直接與「前一次實際價格」進行對決！
             try:
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
@@ -339,19 +343,27 @@ def quant_matrix_page():
                     if isinstance(v_15m, pd.DataFrame): v_15m = v_15m.iloc[:, 0]
                     
                     current_live_price = float(c_15m.values[-1])
-                    ma10_15m = float(c_15m.iloc[-11:-1].mean())
-                    price_score = float(current_live_price - ma10_15m)
+                    # 💡 關鍵修復：撈出前一次的實際價格 (上一個 15M K 線的收盤價)
+                    last_live_price = float(c_15m.values[-2])
                     
-                    if price_score > 0: price_trend_text = f"📈 急漲 ({current_live_price:.1f})"
-                    elif price_score < 0: price_trend_text = f"📉 急跌 ({current_live_price:.1f})"
-                    else: price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
+                    # 💡 決策核心：用目前價格減去前一次實際價格
+                    price_score = float(current_live_price - last_live_price)
+                    
+                    if price_score > 0: 
+                        price_trend_text = f"📈 急漲 ({current_live_price:.1f})"
+                    elif price_score < 0: 
+                        price_trend_text = f"📉 急跌 ({current_live_price:.1f})"
+                    else: 
+                        price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                         
                     avg_vol_15m = float(v_15m.iloc[-21:-1].mean())
                     vol_change = float(v_15m.values[-1] - avg_vol_15m)
             except Exception as e:
-                print(f"⚠️ {sym} 15M 盤中精算失敗: {e}")
+                print(f"⚠️ {sym} 15M 盤中即時對決精算失敗: {e}")
+                price_score, vol_change = 0.0, 0.0
+                price_trend_text = "➡️ 異常觀望"
         else:
-            # 💡 盤前/盤後時段：目前價格與前一天收盤價進行物理硬核對照
+            # 💡 盤前/盤後時段：完全回歸你設定的「目前價格 VS 昨天收盤價」硬核物理對照！
             try:
                 current_live_price = result.get("current_price")
                 if current_live_price is not None and prev_close is not None:
@@ -367,17 +379,17 @@ def quant_matrix_page():
             except:
                 price_trend_text = "➡️ 讀取失敗"
             
-            # 盤前以模型的 AI 分數作為情境打標依據
+            # 盤前以模型的 AI 分數作為情境打標預判依據
             price_score = float(ai_score)
 
-        # 💡 終極防禦安全網：強制將變數壓平為純單一數字，阻斷任何 Series 造成的邏輯判斷崩潰
+        # 💡 全自動降維防禦網：強制壓縮為純單一數字標量，阻斷任何 Series 造成的邏輯崩潰
         try:
-            if hasattr(vol_change, "ndim") and vol_change.ndim > 0: vol_change = float(vol_change.iloc[0])
+            if hasattr(vol_change, "ndim") and vol_change.ndim > 0: vol_change = float(vol_change.iloc)
             else: vol_change = float(vol_change)
         except: vol_change = 0.0
 
         try:
-            if hasattr(price_score, "ndim") and price_score.ndim > 0: price_score = float(price_score.iloc[0])
+            if hasattr(price_score, "ndim") and price_score.ndim > 0: price_score = float(price_score.iloc)
             else: price_score = float(price_score)
         except: price_score = 0.0
 
@@ -390,9 +402,9 @@ def quant_matrix_page():
                 scen_num = "情境 1 (極度過熱)"
                 row_class = "row-warn"
                 if is_market_open:
-                    status = "<b>💥 目前價格瘋狂向上急拉！短線過熱</b>"
-                    buy_strat = "<b>🚫 不要追高！</b><br><small>主力在誘多拉抬，等盤中拉回。</small>"
-                    sell_strat = "<b>💰 分批停利！</b><br><small>目前是極佳的短線衝高拔檔點。</small>"
+                    status = "<b>💥 目前價格相較前一刻瘋狂拉抬！</b>"
+                    buy_strat = "<b>🚫 不要追高！</b><br><small>短線急拉過熱，等盤中拉回。</small>"
+                    sell_strat = "<b>💰 分批停利！</b><br><small>這是極佳的極短線衝高拔檔點。</small>"
                 else:
                     status = "易遭隔日沖減碼（拉回修正）"
                     buy_strat = "開盤絕不追高"
@@ -401,7 +413,7 @@ def quant_matrix_page():
                 scen_num = "情境 2 (主力出貨)"
                 row_class = "row-danger"
                 if is_market_open:
-                    status = "<b>🚨 目前價格爆量大跳水！主力集體逃跑</b>"
+                    status = "<b>🚨 目前價格相較前一刻大跳水！主力集體逃跑</b>"
                     buy_strat = "<b>🛑 絕對禁買！</b><br><small>這 15M 殺傷力極大，進場就是送死。</small>"
                     sell_strat = "<b>⚡ 立刻砍倉 / 減碼！</b><br><small>留得青山在，防範連鎖踩踏暴跌。</small>"
                 else:
@@ -414,7 +426,7 @@ def quant_matrix_page():
                 if is_market_open:
                     status = "<b>🔥 目前價格無量緩步墊高！主力控盤惜售</b>"
                     buy_strat = "<b>🛒 果斷加碼！</b><br><small>極健康的惜售結構，震盪就是買點。</small>"
-                    sell_strat = "<b>💎 死死抱緊！</b><br><small>短線無退潮跡象，獲利隨價格狂奔。</small>"
+                    sell_strat = "<b>💎 死死抱緊！</b><br><small>短線無退潮跡象，讓獲利隨現價奔跑。</small>"
                 else:
                     status = "籌碼高度鎖定（驚天惜售）"
                     buy_strat = "開盤可逢低適量試倉"
