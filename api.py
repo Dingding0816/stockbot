@@ -232,7 +232,7 @@ CATEGORY_NAMES = {
     "ai": "AI 與社群媒體 AI Matrix"
 }
 # =========================================================================
-# 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) 核心時間判定與智慧打標
+# 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) 核心時間判定與智慧打標 (Pandas 強健優化版)
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -308,15 +308,32 @@ def quant_matrix_page():
                 price_score = float(price_score) if (price_score is not None and not isinstance(price_score, str)) else 0.0
             except: price_score = 0.0
             
+            # 💡 【優化修正核心】精準提取 Pandas 標量數字，徹底消滅 FutureWarning
             vol_change = result.get("volume_change")
             if vol_change is None:
                 try:
-                    hist_vol = yf.download(sym, period="5d", interval="1d", progress=False)['Volume']
-                    vol_change = float(hist_vol.iloc[-1] - hist_vol.mean())
-                except: vol_change = 0.0
+                    hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
+                    if not hist_df.empty:
+                        v_series = hist_df['Volume']
+                        if isinstance(v_series, pd.DataFrame):
+                            v_series = v_series.iloc[:, 0]
+                            
+                        last_vol = float(v_series.iloc[-1])
+                        mean_vol = float(v_series.mean())
+                        vol_change = last_vol - mean_vol
+                    else:
+                        vol_change = 0.0
+                except Exception as e:
+                    print(f"⚠️ {sym} 歷史成交量計算異常: {e}")
+                    vol_change = 0.0
             else:
-                try: vol_change = float(vol_change)
-                except: vol_change = 0.0
+                try:
+                    if hasattr(vol_change, "iloc"):
+                        vol_change = float(vol_change.iloc)
+                    else:
+                        vol_change = float(vol_change)
+                except:
+                    vol_change = 0.0
 
         beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
@@ -344,7 +361,7 @@ def quant_matrix_page():
                 sell_strat = "持股續抱<br><small>移動止盈點上移，讓獲利持續奔跑。</small>"
         else:
             if vol_change >= 0 and price_score > 0:
-                scen_num = "情境 4 (健康多頭)"
+                scen_num = "情green 4 (健康多頭)"
                 row_class = "row-success"
                 status = "穩健型價量齊揚（波段起起）<br><small style='color:#34d399;'>🛡️ 波動較溫和，資金穩健流入，不易引來瘋狂隔日沖。</small>"
                 buy_strat = "開盤可積極分批佈局<br><small>波段勝率高，走勢相對有支撐。</small>"
@@ -373,6 +390,7 @@ def quant_matrix_page():
             <td style="color:#f87171;">{sell_strat}</td>
         </tr>
         """
+
 # =========================================================================
 # 📊 [第二段 - 2C] 監控矩陣 HTML UI 模板 ＆ 頂部發光標籤動態注入
 # =========================================================================
