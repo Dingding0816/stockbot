@@ -74,7 +74,7 @@ def predict_symbol(symbol: str):
     raw_result = run_prediction(symbol=sym, return_dict=True)
     return process_prediction_with_cache(sym, raw_result)
 # =========================================================================
-# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (終端日誌排錯強化版)
+# 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (付費變數全對接版)
 # =========================================================================
 @app.get("/volume_chart/{symbol}")
 def volume_chart(symbol: str):
@@ -90,13 +90,13 @@ def volume_chart(symbol: str):
     has_real_data = False
     dates, volumes, closes = [], [], []
 
-    # 1. 確保端點路徑完全正確
+    # 1. 官方正確端點
     base_url = "https://finnhub.io"
     
-    # 💡 強健化時間戳：美股歷史日線資料使用標準時區精算，防範部分伺服器溢位
     from datetime import datetime, timedelta
     now = datetime.utcnow()
-    start_date = now - timedelta(days=45) # 稍微往前多推一點，確保一定能涵蓋到 15 個交易日
+    # 💡 拓寬天數至 60 天，確保不論何時都能完整抓到過去 15 個已收盤交易日的歷史
+    start_date = now - timedelta(days=60)
     
     from_time = int(start_date.timestamp())
     to_time = int(now.timestamp())
@@ -106,44 +106,42 @@ def volume_chart(symbol: str):
         "resolution": "D",
         "from": from_time,
         "to": to_time,
-        "token": "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg" # 你的付費金鑰
+        "token": FINNHUB_API_KEY  # 💡 終極修正：改為讀取您的全域付費 Token 變數！
+    }
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
     }
     
     try:
-        r = requests.get(base_url, params=query_params, timeout=5)
+        r = requests.get(base_url, params=query_params, headers=headers, timeout=5)
+        print(f"📡 [DEBUG] 付費通道請求狀態碼: {r.status_code}")
         
-        # 💡 【核心排錯關鍵】在 Render Log 打印出最直觀的伺服器對話
-        print(f"📡 [DEBUG] 正在發送 Finnhub 請求: {symbol}, HTTP 狀態碼: {r.status_code}")
-        
-        if r.status_code != 200:
-            print(f"❌ [Finnhub API 錯誤日誌] 狀態碼: {r.status_code} | 回傳內容: {r.text}")
-            
         if r.status_code == 200:
-            data = r.json()
-            
-            # 檢查 Finnhub 給的狀態回應
-            if data.get("s") == "no_data":
-                print(f"⚠️ [Finnhub Alert] 標的 {symbol} 回傳狀態為 no_data (無歷史資料)，請確認付費權限是否包含此個股。")
-            
-            if "t" in data and data["t"] and len(data["t"]) > 0:
-                # 確保只取最新的 15 天歷史
-                ts = data["t"][-15:]
-                volumes = data["v"][-15:]
-                closes = data["c"][-15:]
-                
-                # 轉換日期
-                dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
-                
-                if len(dates) > 0 and sum(volumes) > 0:
-                    has_real_data = True
-                    print(f"🟢 [Finnhub Success] {symbol} 成功取得實時即時 K 線數據！")
+            # 檢查是否為空字串，若成功打通付費通道，這裡絕對會有資料長度
+            if r.text.strip() and ("application/json" in r.headers.get("Content-Type", "") or r.text.strip().startswith("{")):
+                data = r.json()
+                if "t" in data and data["t"] and len(data["t"]) > 0:
+                    ts = data["t"][-15:]
+                    volumes = data["v"][-15:]
+                    closes = data["c"][-15:]
+                    dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                    if len(dates) > 0 and sum(volumes) > 0:
+                        has_real_data = True
+                        print(f"🟢 [付費直連成功] {symbol} 已透過您的付費金鑰成功撈取真實數據！")
+                else:
+                    print(f"⚠️ [Finnhub 回應提示] 格式正確但無內部數據: {r.text}")
             else:
-                print(f"⚠️ [Finnhub Alert] 資料結構非預期或長度為0: {data}")
+                print(f"❌ [Finnhub 內容異常警告] 收到 HTTP 200 但內容為空字串或非 JSON。前100字: {r.text[:100]}")
+        else:
+            print(f"❌ [Finnhub API 錯誤] HTTP 狀態碼: {r.status_code} | 內容: {r.text}")
+            
     except Exception as e:
-        print(f"❌ [Finnhub Connection Failed] 網路層崩潰原因: {str(e)}")
+        print(f"❌ [Finnhub Connection Failed] 處理期間發生崩潰: {str(e)}")
 
     # =========================================================================
-    # 備援模擬機制 (當 has_real_data 為 False 時強制啟動)
+    # 備援模擬機制 (當 has_real_data 為 False 時發動)
     # =========================================================================
     if not has_real_data:
         dates, volumes, closes = [], [], []
@@ -176,7 +174,7 @@ def volume_chart(symbol: str):
             closes.append(price_steps[i])
             volumes.append(random.randint(3500000, 7500000))
 
-    # Matplotlib 高質感繪圖
+    # Matplotlib 雙 Y 軸高質感繪圖
     plt.clf()
     plt.close('all')
     fig = plt.figure(figsize=(12, 5))
@@ -222,15 +220,6 @@ def volume_chart(symbol: str):
         return FileResponse(img_filename, media_type="image/png")
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
-# -----------------------------
-# 動態對照表 (保留原始定義)
-# -----------------------------
-CATEGORY_NAMES = {
-    "memory": "記憶體存儲 Memory",
-    "tech": "半導體晶片 Tech / IC",
-    "storage": "硬碟與儲存 Storage",
-    "ai": "AI 與社群媒體 AI Matrix"
-}
 # =========================================================================
 # 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) 核心時間判定與智慧打標 (Pandas 強健優化版)
 # =========================================================================
