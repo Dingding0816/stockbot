@@ -13,6 +13,16 @@ matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as patheffects
 
+# =========================================================================
+# 🛡️ 終極防禦：在全站最頂端提早宣告對照表，徹底根除 NameError 崩潰！
+# =========================================================================
+CATEGORY_NAMES = {
+    "memory": "記憶體存儲 Memory",
+    "tech": "半導體晶片 Tech / IC",
+    "storage": "硬碟與儲存 Storage",
+    "ai": "AI 與社群媒體 AI Matrix"
+}
+
 # 💡 修正：移除無法匯入的 Middleware，只保留需要的內容
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
