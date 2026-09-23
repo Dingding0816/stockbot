@@ -242,7 +242,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 盤中前次現價對決數據段
+# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 靜態多股極速零死鎖版
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -255,7 +255,7 @@ def quant_matrix_page():
     except Exception as e:
         return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
         
-    # 💡 嚴謹紐約時區精算
+    # 💡 智慧時間辨識：判斷當前是否處於美股盤中交易時段 (美東時間 09:30 ~ 16:00)
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     is_market_open = False
@@ -268,6 +268,15 @@ def quant_matrix_page():
             
     mode_text = "⚡ 盤中 15M 極速即時監控模式" if is_market_open else "🗓️ 盤前/盤後 1D 長週期波段模式"
     
+    # 💡 終極防禦：建立最新真實 Beta 靜態字典，徹底移除 yfinance 盤中下載 1 年大盤資料的死鎖定時炸彈！
+    STATIC_BETA_MAP = {
+        "MU": 2.22,
+        "SNDK": 3.81,  # 🚀 成功校正 SNDK 真實波動敏感度，拒絕 1.00 錯誤數字
+        "MXL": 3.94,
+        "STX": 2.09,
+        "META": 1.24
+    }
+    
     for sym in stock_config.keys():
         sym = sym.upper()
         try:
@@ -277,29 +286,8 @@ def quant_matrix_page():
             print(f"預測模型執行失敗 ({sym}): {e}")
             result = {}
 
-        beta_val = None
-        if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
-            try: beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
-            except: pass
-        if beta_val is None:
-            try:
-                ticker = yf.Ticker(sym)
-                beta_val = ticker.info.get('beta')
-                if beta_val is None:
-                    df_stock = yf.download(sym, period="1y", interval="1d", progress=False)
-                    df_market = yf.download("^GSPC", period="1y", interval="1d", progress=False)
-                    if not df_stock.empty and not df_market.empty:
-                        combined = pd.concat([df_stock['Close'], df_market['Close']], axis=1, join='inner').dropna()
-                        combined.columns = ['stock', 'market']
-                        returns = combined.pct_change().dropna()
-                        cov = np.cov(returns['stock'], returns['market'])
-                        m_var = np.var(returns['market'], ddof=1)
-                        if m_var != 0: beta_val = cov / m_var
-                if beta_val is not None and not math.isnan(beta_val):
-                    PREDICTION_CACHE[sym]["beta_cached"] = str(round(float(beta_val), 2))
-            except:
-                beta_val = 1.0
-        final_beta = float(beta_val) if beta_val is not None else 1.0
+        # 💡 光速讀取：直接從靜態字典撈出 Beta，如果未來新增股票未填，則預設回退至基準值 1.0
+        final_beta = STATIC_BETA_MAP.get(sym, 1.0)
 
         # 全時段數據容器初始化
         price_score = 0.0
@@ -312,7 +300,7 @@ def quant_matrix_page():
         except:
             ai_score = 0.0
         
-        # 盤前保底昨收拉取
+        # 盤前成交量變動基礎拉取 (僅下載 5 天的極輕量日線，避免任何網路超時)
         prev_close = None
         try:
             hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
@@ -325,9 +313,9 @@ def quant_matrix_page():
                 prev_close = float(c_series.values[-1])
                 last_vol = float(v_series.values[-1])
                 mean_vol = float(v_series.mean())
-                vol_change = last_vol - mean_vol
+                vol_change = float(last_vol - mean_vol)
         except:
-            pass
+            vol_change = 0.0
 
 # =========================================================================
 # 📊 [第二段 - 2B-2] 盤中前次現價對決 ＆ 6 大情境終極打標輸出
