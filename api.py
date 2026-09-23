@@ -342,10 +342,10 @@ def quant_matrix_page():
             vol_change = 0.0
 
 # =========================================================================
-# 📊 [第二段 - 2B-2] 100% 阻斷持平死鎖之極速判斷打標與 HTML 輸出段 (最終校正版)
+# 📊 [第二段 - 2B-2] 終極型態強制解鎖 ＆ 100% 驅逐持平死鎖打標段
 # =========================================================================
         if is_market_open:
-            # ⚡ 盤中交易時段：15M K線高頻對決 (加入昨收防持平死鎖機制)
+            # ⚡ 盤中交易時段：15M K線高頻對決
             try:
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
@@ -357,10 +357,8 @@ def quant_matrix_page():
                     current_live_price = float(c_15m.values[-1])
                     last_live_price = float(c_15m.values[-2])
                     
-                    # 智慧防禦核心：先計算當前 15M 的短線差值
                     price_score = float(current_live_price - last_live_price)
                     
-                    # 如果短線兩根 K 線扣出來剛好是 0，自動切換為對比昨收
                     if price_score == 0.0 and prev_close is not None:
                         price_score = float(current_live_price - prev_close)
                     
@@ -374,28 +372,31 @@ def quant_matrix_page():
                     avg_vol_15m = float(v_15m.iloc[-21:-1].mean())
                     vol_change = float(v_15m.values[-1] - avg_vol_15m)
             except Exception as e:
-                print(f"⚠️ {sym} 15M 盤中即時對決精算失敗: {e}")
+                print(f"⚠️ {sym} 15M 盤中精算失敗: {e}")
                 price_score, vol_change = 0.0, 0.0
                 price_trend_text = "➡️ 異常觀望"
         else:
-            # 💡 盤前/盤後時段：【終極修復核心】修正文字判斷，徹底解鎖盤前持平死鎖！
+            # 💡 盤前/盤後時段：【強制硬轉型校正】徹底擊碎字串型態引發的持平死鎖！
             try:
-                current_live_price = result.get("current_price")
-                if current_live_price is not None and prev_close is not None:
-                    current_live_price = float(current_live_price)
-                    price_diff = float(current_live_price - prev_close)
+                raw_price = result.get("current_price")
+                if raw_price is not None and prev_close is not None:
+                    # 💡 核心防禦：強制先轉字串再轉浮點數，徹底拔除型態不相容的病灶！
+                    current_live_price = float(str(raw_price).strip())
+                    p_close = float(prev_close)
                     
-                    # 💡 根據物理差值，直接給予最直觀的盤前趨勢文字
-                    if price_diff > 0: 
+                    # 硬碰硬對比昨收
+                    if current_live_price > p_close:
                         price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
-                    elif price_diff < 0: 
+                    elif current_live_price < p_close:
                         price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
-                    else: 
+                    else:
                         price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                 else:
-                    current_live_price = float(current_live_price) if current_live_price is not None else 0.0
-                    price_trend_text = f"➡️ 觀察中 ({current_live_price:.1f})"
-            except:
+                    # 萬一真的沒抓到現價，安全降級顯示
+                    c_price = float(str(raw_price).strip()) if raw_price is not None else 0.0
+                    price_trend_text = f"➡️ 觀察中 ({c_price:.1f})"
+            except Exception as e:
+                print(f"⚠️ 盤前價格比對發生錯誤 ({sym}): {e}")
                 price_trend_text = "➡️ 讀取失敗"
             
             # 盤前以模型的 AI 分數作為情境打標預判依據
