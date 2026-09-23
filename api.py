@@ -342,7 +342,7 @@ def quant_matrix_page():
             vol_change = 0.0
 
 # =========================================================================
-# 📊 [第二段 - 2B-2] 盤中前次現價對決 ＆ 6 大情境智慧防持平死鎖打標段
+# 📊 [第二段 - 2B-2] 100% 阻斷持平死鎖之極速判斷打標與 HTML 輸出段 (最終校正版)
 # =========================================================================
         if is_market_open:
             # ⚡ 盤中交易時段：15M K線高頻對決 (加入昨收防持平死鎖機制)
@@ -357,11 +357,10 @@ def quant_matrix_page():
                     current_live_price = float(c_15m.values[-1])
                     last_live_price = float(c_15m.values[-2])
                     
-                    # 💡 智慧防禦核心：先計算當前 15M 的短線差值
+                    # 智慧防禦核心：先計算當前 15M 的短線差值
                     price_score = float(current_live_price - last_live_price)
                     
-                    # 💡 【終極破死鎖】如果短線兩根 K 線扣出來剛好是 0（代表橫盤死水或未真正發動變動）
-                    # 且我們有成功拿到昨天的歷史收盤價 prev_close，則自動切換為對比昨收，讓趨勢1秒動起來！
+                    # 如果短線兩根 K 線扣出來剛好是 0，自動切換為對比昨收
                     if price_score == 0.0 and prev_close is not None:
                         price_score = float(current_live_price - prev_close)
                     
@@ -379,16 +378,20 @@ def quant_matrix_page():
                 price_score, vol_change = 0.0, 0.0
                 price_trend_text = "➡️ 異常觀望"
         else:
-            # 💡 盤前/盤後時段：完全回歸你設定的「目前價格 VS 昨天收盤價」硬核物理對照！
+            # 💡 盤前/盤後時段：【終極修復核心】修正文字判斷，徹底解鎖盤前持平死鎖！
             try:
                 current_live_price = result.get("current_price")
                 if current_live_price is not None and prev_close is not None:
                     current_live_price = float(current_live_price)
                     price_diff = float(current_live_price - prev_close)
                     
-                    if price_diff > 0: price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
-                    elif price_diff < 0: price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
-                    else: price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
+                    # 💡 根據物理差值，直接給予最直觀的盤前趨勢文字
+                    if price_diff > 0: 
+                        price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
+                    elif price_diff < 0: 
+                        price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
+                    else: 
+                        price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                 else:
                     current_live_price = float(current_live_price) if current_live_price is not None else 0.0
                     price_trend_text = f"➡️ 觀察中 ({current_live_price:.1f})"
@@ -398,7 +401,7 @@ def quant_matrix_page():
             # 盤前以模型的 AI 分數作為情境打標預判依據
             price_score = float(ai_score)
 
-        # 💡 全自動降維防禦網：強制壓縮為純單一數字標量，阻斷任何 Series 造成的邏輯崩潰
+        # 全自動降維防禦網：強制壓縮為純單一數字標量，阻斷任何 Series 造成的邏輯崩潰
         try:
             if hasattr(vol_change, "ndim") and vol_change.ndim > 0: vol_change = float(vol_change.iloc)
             else: vol_change = float(vol_change)
@@ -424,7 +427,7 @@ def quant_matrix_page():
                 else:
                     status = "易遭隔日沖減碼（拉回修正）"
                     buy_strat = "開盤絕不追高"
-                    sell_strat = "開盤上漲則分批獲利了了解"
+                    sell_strat = "開盤上漲則分批獲利了結"
             elif vol_change >= 0 and price_score <= 0:
                 scen_num = "情境 2 (主力出貨)"
                 row_class = "row-danger"
@@ -434,7 +437,7 @@ def quant_matrix_page():
                     sell_strat = "<b>⚡ 立刻砍倉 / 減碼！</b><br><small>留得青山在，防範連鎖踩踏暴跌。</small>"
                 else:
                     status = "主力高位倒貨（恐慌踩踏）"
-                    buy_strat = "開盤若有小反彈無條件減碼"
+                    buy_strat = "嚴禁抄底"
                     sell_strat = "開盤若有小反彈無條件減碼"
             else:
                 scen_num = "情境 3 (強勢鎖籌)"
