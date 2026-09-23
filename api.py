@@ -342,10 +342,10 @@ def quant_matrix_page():
             vol_change = 0.0
 
 # =========================================================================
-# 📊 [第二段 - 2B-2] 盤中前次現價對決 ＆ 6 大情境終極打標輸出
+# 📊 [第二段 - 2B-2] 盤中前次現價對決 ＆ 6 大情境智慧防持平死鎖打標段
 # =========================================================================
         if is_market_open:
-            # ⚡ 盤中交易時段：【究極優化】目前價格直接與「前一次實際價格」進行對決！
+            # ⚡ 盤中交易時段：15M K線高頻對決 (加入昨收防持平死鎖機制)
             try:
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
@@ -355,11 +355,15 @@ def quant_matrix_page():
                     if isinstance(v_15m, pd.DataFrame): v_15m = v_15m.iloc[:, 0]
                     
                     current_live_price = float(c_15m.values[-1])
-                    # 💡 關鍵修復：撈出前一次的實際價格 (上一個 15M K 線的收盤價)
                     last_live_price = float(c_15m.values[-2])
                     
-                    # 💡 決策核心：用目前價格減去前一次實際價格
+                    # 💡 智慧防禦核心：先計算當前 15M 的短線差值
                     price_score = float(current_live_price - last_live_price)
+                    
+                    # 💡 【終極破死鎖】如果短線兩根 K 線扣出來剛好是 0（代表橫盤死水或未真正發動變動）
+                    # 且我們有成功拿到昨天的歷史收盤價 prev_close，則自動切換為對比昨收，讓趨勢1秒動起來！
+                    if price_score == 0.0 and prev_close is not None:
+                        price_score = float(current_live_price - prev_close)
                     
                     if price_score > 0: 
                         price_trend_text = f"📈 急漲 ({current_live_price:.1f})"
@@ -420,7 +424,7 @@ def quant_matrix_page():
                 else:
                     status = "易遭隔日沖減碼（拉回修正）"
                     buy_strat = "開盤絕不追高"
-                    sell_strat = "開盤上漲則分批獲利了結"
+                    sell_strat = "開盤上漲則分批獲利了了解"
             elif vol_change >= 0 and price_score <= 0:
                 scen_num = "情境 2 (主力出貨)"
                 row_class = "row-danger"
@@ -430,7 +434,7 @@ def quant_matrix_page():
                     sell_strat = "<b>⚡ 立刻砍倉 / 減碼！</b><br><small>留得青山在，防範連鎖踩踏暴跌。</small>"
                 else:
                     status = "主力高位倒貨（恐慌踩踏）"
-                    buy_strat = "嚴禁抄底"
+                    buy_strat = "開盤若有小反彈無條件減碼"
                     sell_strat = "開盤若有小反彈無條件減碼"
             else:
                 scen_num = "情境 3 (強勢鎖籌)"
