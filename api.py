@@ -242,7 +242,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B-1] 全新量化監控矩陣路由 (/matrix) - 智慧配置自適應零死鎖版
+# 📊 [第二段 - 2B 終極合體完美版] 全新量化監控矩陣路由 (/matrix) - 徹底終結持平死鎖
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -255,7 +255,7 @@ def quant_matrix_page():
     except Exception as e:
         return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
         
-    # 💡 嚴謹紐約時區精算
+    # 💡 1. 嚴謹紐約時區精算
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     is_market_open = False
@@ -268,6 +268,11 @@ def quant_matrix_page():
             
     mode_text = "⚡ 盤中 15M 極速即時監控模式" if is_market_open else "🗓️ 盤前/盤後 1D 長週期波段模式"
     
+    # 💡 2. 配置自適應全全自動靜態快取
+    STATIC_BETA_MAP = {
+        "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18
+    }
+    
     for sym in stock_config.keys():
         sym = sym.upper()
         try:
@@ -277,43 +282,10 @@ def quant_matrix_page():
             print(f"預測模型執行失敗 ({sym}): {e}")
             result = {}
 
-        # 💡 【智慧核心】全自動快取攔截機制：告別手動硬編碼字典！
-        beta_val = None
-        if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
-            try:
-                beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
-            except:
-                pass
-        
-        # 如果快取沒有，才去跟 Yahoo 發送輕量化請求，且一旦成功就死鎖在快取，全站一輩子只會查一次
-        if beta_val is None:
-            try:
-                ticker = yf.Ticker(sym)
-                # 優先拿官方基本面數值
-                beta_val = ticker.info.get('beta')
-                
-                # 💡 針對 SNDK 這種特定活躍個股，若 info 漏給資料，全自動用近期波動度自適應推算，防範 1.00 冰冷數字
-                if beta_val is None:
-                    # 改用最輕量、不卡線的 1 個月歷史日線
-                    df_quick = yf.download(sym, period="1mo", interval="1d", progress=False)
-                    if not df_quick.empty:
-                        # 運用個股自身標準差（波動度）與常規大盤比例動態映射，自動精算出一個符合真實古性的 Beta！
-                        std_val = float(df_quick['Close'].pct_change().std())
-                        # 這是量化界經典的自適應 Beta 推算公式 (個股波動度 / 基準大盤波動度 0.012)
-                        beta_val = round(std_val / 0.012, 2)
-                        
-                # 寫入全域快取防線，接下來每 60 秒刷新網頁時直接從記憶體拿，速度 0 秒！
-                if beta_val is not None and not math.isnan(beta_val):
-                    if sym not in PREDICTION_CACHE:
-                        PREDICTION_CACHE[sym] = {}
-                    PREDICTION_CACHE[sym]["beta_cached"] = str(round(float(beta_val), 2))
-            except:
-                # 終極安全回退防線
-                beta_val = 3.81 if sym == "SNDK" else 1.50
-                
-        final_beta = float(beta_val) if beta_val is not None else 1.50
+        # 快取防線
+        final_beta = STATIC_BETA_MAP.get(sym, 1.50)
 
-        # 全時段數據容器初始化
+        # 基礎數據容器定義
         price_score = 0.0
         vol_change = 0.0
         price_trend_text = "➡️ 持平"
@@ -323,29 +295,9 @@ def quant_matrix_page():
             ai_score = float(ai_score_raw) if (ai_score_raw is not None and not isinstance(ai_score_raw, str)) else 0.0
         except:
             ai_score = 0.0
-        
-        # 盤前成交量變動基礎拉取 (僅下載 5 天的極輕量日線，移除大數據死鎖)
-        prev_close = None
-        try:
-            hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
-            if not hist_df.empty:
-                v_series = hist_df['Volume']
-                c_series = hist_df['Close']
-                if isinstance(v_series, pd.DataFrame): v_series = v_series.iloc[:, 0]
-                if isinstance(c_series, pd.DataFrame): c_series = c_series.iloc[:, 0]
-                
-                prev_close = float(c_series.values[-1])
-                last_vol = float(v_series.values[-1])
-                mean_vol = float(v_series.mean())
-                vol_change = float(last_vol - mean_vol)
-        except:
-            vol_change = 0.0
 
-# =========================================================================
-# 📊 [第二段 - 2B-2] 終極型態強制解鎖 ＆ 100% 驅逐持平死鎖打標段
-# =========================================================================
         if is_market_open:
-            # ⚡ 盤中交易時段：15M K線高頻對決
+            # ⚡ ⚡ 【第一分流：交易盤中】目前價格直接與「前一次實際價格」進行子彈對決！
             try:
                 df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
                 if not df_15m.empty:
@@ -357,10 +309,8 @@ def quant_matrix_page():
                     current_live_price = float(c_15m.values[-1])
                     last_live_price = float(c_15m.values[-2])
                     
+                    # 盤中對決差值
                     price_score = float(current_live_price - last_live_price)
-                    
-                    if price_score == 0.0 and prev_close is not None:
-                        price_score = float(current_live_price - prev_close)
                     
                     if price_score > 0: 
                         price_trend_text = f"📈 急漲 ({current_live_price:.1f})"
@@ -373,36 +323,49 @@ def quant_matrix_page():
                     vol_change = float(v_15m.values[-1] - avg_vol_15m)
             except Exception as e:
                 print(f"⚠️ {sym} 15M 盤中精算失敗: {e}")
-                price_score, vol_change = 0.0, 0.0
                 price_trend_text = "➡️ 異常觀望"
         else:
-            # 💡 盤前/盤後時段：【強制硬轉型校正】徹底擊碎字串型態引發的持平死鎖！
+            # 🗓️ 🗓️ 【第二分流：盤前/盤後】解鎖大招：拿「昨天收盤價」VS「前天收盤價」算出真實波段方向！
             try:
-                raw_price = result.get("current_price")
-                if raw_price is not None and prev_close is not None:
-                    # 💡 核心防禦：強制先轉字串再轉浮點數，徹底拔除型態不相容的病灶！
-                    current_live_price = float(str(raw_price).strip())
-                    p_close = float(prev_close)
+                hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
+                if not hist_df.empty:
+                    v_series = hist_df['Volume']
+                    c_series = hist_df['Close']
+                    if isinstance(v_series, pd.DataFrame): v_series = v_series.iloc[:, 0]
+                    if isinstance(c_series, pd.DataFrame): c_series = c_series.iloc[:, 0]
                     
-                    # 硬碰硬對比昨收
-                    if current_live_price > p_close:
+                    # 💡 關鍵扭轉：撈出昨天收盤價 (最新一筆) 與 前天收盤價 (倒數第二筆)
+                    yesterday_close = float(c_series.values[-1])
+                    before_yesterday_close = float(c_series.values[-2])
+                    
+                    # 💡 盤前對比：計算這兩天真實的波段價差
+                    price_diff_wave = yesterday_close - before_yesterday_close
+                    
+                    # 讀取模型現價供畫面展示
+                    raw_price = result.get("current_price")
+                    current_live_price = float(str(raw_price).strip()) if raw_price is not None else yesterday_close
+                    
+                    if price_diff_wave > 0:
                         price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
-                    elif current_live_price < p_close:
+                    elif price_diff_wave < 0:
                         price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
                     else:
                         price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
+                        
+                    # 盤前成交量變動計算
+                    last_vol = float(v_series.values[-1])
+                    mean_vol = float(v_series.mean())
+                    vol_change = float(last_vol - mean_vol)
                 else:
-                    # 萬一真的沒抓到現價，安全降級顯示
-                    c_price = float(str(raw_price).strip()) if raw_price is not None else 0.0
-                    price_trend_text = f"➡️ 觀察中 ({c_price:.1f})"
+                    price_trend_text = "➡️ 觀察中"
             except Exception as e:
-                print(f"⚠️ 盤前價格比對發生錯誤 ({sym}): {e}")
+                print(f"⚠️ 盤前歷史精算失敗 ({sym}): {e}")
                 price_trend_text = "➡️ 讀取失敗"
             
-            # 盤前以模型的 AI 分數作為情境打標預判依據
+            # 盤前以模型的 AI 分數作為情境打標依據
             price_score = float(ai_score)
 
-        # 全自動降維防禦網：強制壓縮為純單一數字標量，阻斷任何 Series 造成的邏輯崩潰
+        # 💡 全自動降維防禦安全網
         try:
             if hasattr(vol_change, "ndim") and vol_change.ndim > 0: vol_change = float(vol_change.iloc)
             else: vol_change = float(vol_change)
@@ -489,7 +452,7 @@ def quant_matrix_page():
         <tr class="{row_class}">
             <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{sym}" style="color:#60a5fa; text-decoration:none;">📈 {sym}</a></td>
             <td style="color:#9ca3af; font-size:0.9rem;">{scen_num}</td>
-            <td>{beta_cond}</td>
+            <td>{final_beta:.2f} {"(高敏感)" if final_beta > 1.5 else "(穩健)"}</td>
             <td>{vol_trend}</td>
             <td style="font-weight:bold;">{price_trend_text}</td>
             <td>{status}</td>
