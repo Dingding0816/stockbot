@@ -1,3 +1,10 @@
+BAND:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: Bandwidth Inc
+  category: "agent_comm"       # 新增這行：AI Agent 通信基礎設施
+
 MU:
   model_type: memory
   data_source: finnhub
@@ -39,10 +46,3 @@ ATEYY:
   refresh_interval: 60
   display_name: Advantest Corp
   category: "tech"
-
-BAND:
-  model_type: tech
-  data_source: finnhub
-  refresh_interval: 60
-  display_name: Bandwidth Inc
-  category: "agent_comm"       # 新增這行：AI Agent 通信基礎設施
