@@ -20,7 +20,7 @@ CATEGORY_NAMES = {
     "memory": "記憶體存儲 Memory",
     "tech": "半導體晶片 Tech / IC",
     "storage": "硬碟與儲存 Storage",
-    "agent_comm": "Agent通信基礎設施 Agent Comm",  # <-- 請手動加上這一行
+    "software": "雲端軟體與店商平台 Software",  # <-- 請手動加上這一行
     "ai": "AI 與社群媒體 AI Matrix"
 }
 
