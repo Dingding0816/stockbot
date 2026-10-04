@@ -8,6 +8,17 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+# 🛡️ 解決 yfinance 在雲端環境的 Crumb / 401 阻擋核心：模擬真實瀏覽器標頭
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
+
+session = requests.Session()
+retries = Retry(total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+session.mount('https://', HTTPAdapter(max_retries=retries))
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
+
 import matplotlib
 matplotlib.use('Agg')  # 強制指定 Linux 伺服器專用無介面繪圖模式，解決 savefig 崩潰
 import matplotlib.pyplot as plt
@@ -20,12 +31,11 @@ CATEGORY_NAMES = {
     "memory": "記憶體存儲 Memory",
     "tech": "半導體晶片 Tech / IC",
     "storage": "硬碟與儲存 Storage",
-    "software": "雲端軟體與店商平台 Software",# <-- 請手動加上這一行
-    "semi-equipment": "半導體設備 Semi-equipment",# <-- 請手動加上這一行
+    "software": "雲端軟體與店商平台 Software",
+    "semi-equipment": "半導體設備 Semi-equipment",
     "ai": "AI 與社群媒體 AI Matrix"
 }
 
-# 💡 修正：移除無法匯入的 Middleware，只保留需要的內容
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
@@ -33,17 +43,16 @@ from fastapi.responses import HTMLResponse, FileResponse
 # 引入您原本的日預測邏輯
 from run_daily_new_17 import run_prediction
 
-# 1. 全自動讀取 Render 後台寫入的頂級付費金鑰（若後台無設定，則使用預設金鑰）
+# 1. 全自動讀取 Render 後台寫入的頂級付費金鑰
 FINNHUB_API_KEY = os.getenv("FINNHUB_TOKEN", "d9l0mr1r01qoc1b3psp0d9l0mr1r01qoc1b3pspg")
 
-# 2. 全站只宣告這唯一一個 app 執行實例，絕不重複覆蓋！
+# 2. 全站只宣告這唯一一個 app 執行實例
 app = FastAPI(
     title="Stock Prediction API",
-    description="MU / SNDK / MXL / STX / META 多股票 AI 預估系統",
-    version="2.1.0"
+    description="MU / AMAT / ATEYY 多股票 AI 預估系統",
+    version="2.2.0"
 )
 
-# 3. 允許跨網域存取 (CORS) - 這樣前端就不會再噴 404 或跨網域阻擋錯誤了
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -53,9 +62,10 @@ app.add_middleware(
 )
 
 # -------------------------------------------------------------------------
-# 💾 【新增】全域預測歷史快取機制 (預防 NaN 斷訊)
+# 💾 全域預測歷史快取機制 (預防 NaN 斷訊)
 # -------------------------------------------------------------------------
 PREDICTION_CACHE = {}
+CHART_DATA_CACHE = {}  # 🔥 週末 K 線數據快取，避免週末反覆請求 API
 
 def process_prediction_with_cache(symbol: str, raw_result: dict) -> dict:
     sym = symbol.upper()
@@ -77,14 +87,30 @@ def process_prediction_with_cache(symbol: str, raw_result: dict) -> dict:
             cleaned_result[key] = value
     return cleaned_result
 
+# 🔥 新增：判定今天是否為美股週末休市期間（美東時間週六、週日）
+def is_weekend_now() -> bool:
+    import pytz
+    est = pytz.timezone('US/Eastern')
+    now_est = datetime.now(est)
+    if now_est.weekday() >= 5:
+        return True
+    return False
+
 # -------------------------------------------------------------------------
 # 📈 預測 API 端點（高頻刷新整合快取版）
 # -------------------------------------------------------------------------
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
     sym = symbol.upper()
-    raw_result = run_prediction(symbol=sym, return_dict=True)
-    return process_prediction_with_cache(sym, raw_result)
+    try:
+        raw_result = run_prediction(symbol=sym, return_dict=True)
+        return process_prediction_with_cache(sym, raw_result)
+    except Exception as e:
+        print(f"❌ 預測端點異常: {e}")
+        if sym in PREDICTION_CACHE and PREDICTION_CACHE[sym]:
+            return PREDICTION_CACHE[sym]
+        raise HTTPException(status_code=500, detail="無法取得預測數據且無歷史快取")
+
 # =========================================================================
 # 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (NumPy 安全解鎖版)
 # =========================================================================
@@ -102,66 +128,89 @@ def volume_chart(symbol: str):
     has_real_data = False
     dates, volumes, closes = [], [], []
 
-    # 1. 官方標準端點
-    base_url = "https://finnhub.io"
-    current_unix_time = int(time.time())
-    seconds_in_60_days = 60 * 24 * 60 * 60
-    
-    from_time = current_unix_time - seconds_in_60_days
-    to_time = current_unix_time
+    # 🔥 週末防護牆策略：若處於週末休市，且本地有快取，直接提取，完美阻斷外部超時！
+    if is_weekend_now() and symbol in CHART_DATA_CACHE:
+        dates = CHART_DATA_CACHE[symbol]['dates']
+        volumes = CHART_DATA_CACHE[symbol]['volumes']
+        closes = CHART_DATA_CACHE[symbol]['closes']
+        has_real_data = True
+        print(f"🧘 [週末快取防線] {symbol} 直接回傳週末快取 K 線，完美阻斷外部超時！")
 
-    query_params = {
-        "symbol": symbol,
-        "resolution": "D",
-        "from": str(from_time),
-        "to": str(to_time),
-        "token": str(FINNHUB_API_KEY).strip()
-    }
-    
-    headers = {
-        "Accept": "application/json"
-    }
-    
-    try:
-        r = requests.get(base_url, params=query_params, headers=headers, timeout=5)
-        print(f"📡 [DEBUG] 圖表請求狀態碼: {r.status_code}")
+    if not has_real_data:
+        # 1. 官方標準端點 (補上正確的完整 API 路徑)
+        base_url = "https://finnhub.io/api/v1/stock/candle"
+        current_unix_time = int(time.time())
+        seconds_in_60_days = 60 * 24 * 60 * 60
         
-        if r.status_code == 200:
-            if r.text.strip() and r.text.strip().startswith("{"):
-                data = r.json()
-                if "t" in data and data["t"] and len(data["t"]) > 0:
-                    ts = data["t"][-15:]
-                    volumes = data["v"][-15:]
-                    closes = data["c"][-15:]
-                    dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+        from_time = current_unix_time - seconds_in_60_days
+        to_time = current_unix_time
+
+        query_params = {
+            "symbol": symbol,
+            "resolution": "D",
+            "from": str(from_time),
+            "to": str(to_time),
+            "token": str(FINNHUB_API_KEY).strip()
+        }
+        
+        headers = {
+            "Accept": "application/json"
+        }
+        
+        try:
+            r = requests.get(base_url, params=query_params, headers=headers, timeout=4)
+            print(f"📡 [DEBUG] 圖表請求狀態碼: {r.status_code}")
+            
+            if r.status_code == 200:
+                if r.text.strip() and r.text.strip().startswith("{"):
+                    data = r.json()
+                    if "t" in data and data["t"] and len(data["t"]) > 0:
+                        ts = data["t"][-15:]
+                        volumes = data["v"][-15:]
+                        closes = data["c"][-15:]
+                        dates = [datetime.fromtimestamp(t).strftime("%m-%d") for t in ts]
+                        if len(dates) > 0 and sum(volumes) > 0:
+                            has_real_data = True
+                            print(f"🟢 [付費通道成功] {symbol} 成功取得官方真實數據！")
+            
+            # 💡 雙通道防禦核心：若 Finnhub 受阻或無數據，無縫切換到 yfinance
+            if not has_real_data:
+                print(f"ℹ️ 啟動第二通道 yfinance 直連...")
+                target_sym = "WDC" if symbol == "SNDK" else symbol
+                
+                # 🔥 優化：使用模擬 Session 防阻擋、禁用多執行緒防鎖死、設定 4 秒 Timeout
+                df_hist = yf.download(
+                    target_sym, 
+                    period="45d", 
+                    interval="1d", 
+                    progress=False, 
+                    session=session, 
+                    threads=False, 
+                    timeout=4
+                )
+                if not df_hist.empty:
+                    close_series = df_hist['Close']
+                    vol_series = df_hist['Volume']
+                    if isinstance(close_series, pd.DataFrame): close_series = close_series.iloc[:, 0]
+                    if isinstance(vol_series, pd.DataFrame): vol_series = vol_series.iloc[:, 0]
+                    
+                    ts_closes = close_series.tail(15)
+                    ts_volumes = vol_series.tail(15)
+                    closes = [float(c) for c in ts_closes.values]
+                    volumes = [float(v) for v in ts_volumes.values]
+                    dates = [d.strftime("%m-%d") for d in ts_closes.index]
+                    
                     if len(dates) > 0 and sum(volumes) > 0:
                         has_real_data = True
-                        print(f"🟢 [付費通道成功] {symbol} 成功取得官方真實數據！")
-        
-        # 💡 雙通道防禦核心：若 Finnhub 受阻或無數據，無縫切換到 yfinance，並「修正 NumPy 提取 Bug」
-        if not has_real_data:
-            print(f"ℹ️ 啟動第二通道 yfinance 直連...")
-            target_sym = "WDC" if symbol == "SNDK" else symbol
-            
-            df_hist = yf.download(target_sym, period="45d", interval="1d", progress=False)
-            if not df_hist.empty:
-                close_series = df_hist['Close']
-                vol_series = df_hist['Volume']
-                if isinstance(close_series, pd.DataFrame): close_series = close_series.iloc[:, 0]
-                if isinstance(vol_series, pd.DataFrame): vol_series = vol_series.iloc[:, 0]
-                
-                ts_closes = close_series.tail(15)
-                ts_volumes = vol_series.tail(15)
-                closes = [float(c) for c in ts_closes.values]
-                volumes = [float(v) for v in ts_volumes.values]
-                dates = [d.strftime("%m-%d") for d in ts_closes.index]
-                
-                if len(dates) > 0 and sum(volumes) > 0:
-                    has_real_data = True
-                    print(f"🟢 [yfinance 備援成功] {symbol} 已 100% 解鎖真實 K 線！")
-                    
-    except Exception as e:
-        print(f"❌ [雙通道精算異常已攔截] 異常原因: {str(e)}")
+                        print(f"🟢 [yfinance 備援成功] {symbol} 已 100% 解鎖真實 K 線！")
+                        
+                        # 寫入快取供日後快速回傳
+                        CHART_DATA_CACHE[symbol] = {
+                            'dates': dates, 'volumes': volumes, 'closes': closes
+                        }
+                        
+        except Exception as e:
+            print(f"❌ [雙通道精算異常已攔截] 異常原因: {str(e)}")
 
     # =========================================================================
     # 第三通道：最終保底模擬機制
@@ -172,7 +221,7 @@ def volume_chart(symbol: str):
             pred_data = run_prediction(symbol=symbol, return_dict=True)
             base_price = float(pred_data.get("current_price", 100.0))
         except Exception:
-            defaults = {"MU": 112.5, "SNDK": 86.2, "MXL": 24.8, "STX": 93.4, "META": 524.1}
+            defaults = {"MU": 112.5, "SNDK": 86.2, "MXL": 24.8, "STX": 93.4, "META": 524.1, "AMAT": 185.0}
             base_price = defaults.get(symbol, 100.0)
 
         current_time = int(time.time())
@@ -244,7 +293,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B 終極合體完美版] 全新量化監控矩陣路由 (/matrix) - 徹底終結持平死鎖
+# 📊 [第二段 - 2B - Part 1] 全新量化監控矩陣路由 (/matrix) - 核心動能精算
 # =========================================================================
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
@@ -272,7 +321,7 @@ def quant_matrix_page():
     
     # 💡 2. 配置自適應全全自動靜態快取
     STATIC_BETA_MAP = {
-        "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18
+        "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18, "AMAT": 1.62
     }
     
     for sym in stock_config.keys():
@@ -299,9 +348,9 @@ def quant_matrix_page():
             ai_score = 0.0
 
         if is_market_open:
-            # ⚡ ⚡ 【第一分流：交易盤中】目前價格直接與「前一次實際價格」進行子彈對決！
+            # ⚡ ⚡ 【第一分流：交易盤中】
             try:
-                df_15m = yf.download(sym, period="3d", interval="15m", progress=False)
+                df_15m = yf.download(sym, period="3d", interval="15m", progress=False, session=session, threads=False, timeout=4)
                 if not df_15m.empty:
                     c_15m = df_15m['Close']
                     v_15m = df_15m['Volume']
@@ -310,8 +359,6 @@ def quant_matrix_page():
                     
                     current_live_price = float(c_15m.values[-1])
                     last_live_price = float(c_15m.values[-2])
-                    
-                    # 盤中對決差值
                     price_score = float(current_live_price - last_live_price)
                     
                     if price_score > 0: 
@@ -327,23 +374,19 @@ def quant_matrix_page():
                 print(f"⚠️ {sym} 15M 盤中精算失敗: {e}")
                 price_trend_text = "➡️ 異常觀望"
         else:
-            # 🗓️ 🗓️ 【第二分流：盤前/盤後】解鎖大招：拿「昨天收盤價」VS「前天收盤價」算出真實波段方向！
+            # 🗓️ 🗓️ 【第二分流：盤前/盤後】
             try:
-                hist_df = yf.download(sym, period="5d", interval="1d", progress=False)
+                hist_df = yf.download(sym, period="5d", interval="1d", progress=False, session=session, threads=False, timeout=4)
                 if not hist_df.empty:
                     v_series = hist_df['Volume']
                     c_series = hist_df['Close']
                     if isinstance(v_series, pd.DataFrame): v_series = v_series.iloc[:, 0]
                     if isinstance(c_series, pd.DataFrame): c_series = c_series.iloc[:, 0]
                     
-                    # 💡 關鍵扭轉：撈出昨天收盤價 (最新一筆) 與 前天收盤價 (倒數第二筆)
                     yesterday_close = float(c_series.values[-1])
                     before_yesterday_close = float(c_series.values[-2])
-                    
-                    # 💡 盤前對比：計算這兩天真實的波段價差
                     price_diff_wave = yesterday_close - before_yesterday_close
                     
-                    # 讀取模型現價供畫面展示
                     raw_price = result.get("current_price")
                     current_live_price = float(str(raw_price).strip()) if raw_price is not None else yesterday_close
                     
@@ -354,7 +397,6 @@ def quant_matrix_page():
                     else:
                         price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                         
-                    # 盤前成交量變動計算
                     last_vol = float(v_series.values[-1])
                     mean_vol = float(v_series.mean())
                     vol_change = float(last_vol - mean_vol)
@@ -364,7 +406,6 @@ def quant_matrix_page():
                 print(f"⚠️ 盤前歷史精算失敗 ({sym}): {e}")
                 price_trend_text = "➡️ 讀取失敗"
             
-            # 盤前以模型的 AI 分數作為情境打標依據
             price_score = float(ai_score)
 
         # 💡 全自動降維防禦安全網
@@ -379,8 +420,9 @@ def quant_matrix_page():
         except: price_score = 0.0
 
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
-        beta_cond = f"{final_beta:.2f} (高敏感)" if final_beta > 1.5 else f"{final_beta:.2f} (穩健)"
-        
+        # =========================================================================
+        # 📊 [第二段 - 2B - Part 2] 量化情境決策打標與 HTML 表格封裝 (接續 Part 1 迴圈內部)
+        # =========================================================================
         row_class = "row-normal"
         if final_beta > 1.5:
             if vol_change >= 0 and price_score > 0:
@@ -450,6 +492,7 @@ def quant_matrix_page():
                     buy_strat = "絕對不要左側接刀"
                     sell_strat = "及時停損或換股"
 
+        # 💡 滿血拼接：這段會完美把數據包進 HTML 的表格行 (tr) 中
         matrix_rows_html += f"""
         <tr class="{row_class}">
             <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{sym}" style="color:#60a5fa; text-decoration:none;">📈 {sym}</a></td>
@@ -462,10 +505,12 @@ def quant_matrix_page():
             <td style="color:#f87171;">{sell_strat}</td>
         </tr>
         """
+        
+    # 💡 注意：迴圈結束後，此處將由 [第二段 - 2C] 接棒進行整頁 HTML 的打包輸出
 
-# =========================================================================
-# 📊 [第二段 - 2C 終極合體版] 監控矩陣 HTML UI 模板 ＆ 100% 阻斷瀏覽器快取死鎖
-# =========================================================================
+    # =========================================================================
+    # 📊 [第二段 - 2C 終極合體版] 監控矩陣 HTML UI 模板 ＆ 100% 阻斷瀏覽器快取死鎖
+    # =========================================================================
     raw_html = f"""<!DOCTYPE html><html lang="zh-TW">
     <head>
         <meta charset="UTF-8">
@@ -511,7 +556,7 @@ def quant_matrix_page():
                 </tr>
             </thead>
             <tbody>
-                __MATRIX_ROWS__
+                {matrix_rows_html}
             </tbody>
         </table>
     </div>
@@ -520,7 +565,6 @@ def quant_matrix_page():
         setInterval(() => {{ 
             matrixSec--; 
             if (matrixSec <= 0) {{ 
-                // 💡 注入強制刷新參數，防止任何惡意快取死鎖！
                 window.location.href = window.location.pathname + '?t=' + new Date().getTime();
             }} else {{ 
                 document.getElementById("matrix-timer").innerText = matrixSec; 
@@ -529,153 +573,10 @@ def quant_matrix_page():
     </script>
     </body></html>"""
     
-    final_html = raw_html.replace("__MATRIX_ROWS__", matrix_rows_html) \
-                         .replace('<div class="title">📊 動態動能與風險量化矩陣圖</div>', 
+    final_html = raw_html.replace('<div class="title">📊 動態動能與風險量化矩陣圖</div>', 
                                   f'<div class="title">📊 動態動能與風險量化矩陣圖</div>\n<div class="mode-badge">{mode_text}</div>')
     return HTMLResponse(content=final_html)
 
-# =========================================================================
-# 📊 [第三段 - 3A] 滿血復活：個股 Dashboard 路由後端邏輯與數據解析
-# =========================================================================
-@app.get("/dashboard/{symbol}", response_class=HTMLResponse)
-def dashboard(symbol: str):
-    sym = symbol.upper()
-    raw_result = run_prediction(symbol=sym, return_dict=True)
-    
-    # 💡 啟動歷史快取備援機制（自動清洗 NaN 並用有效歷史數據補位）
-    result = process_prediction_with_cache(sym, raw_result)
-
-    def r(x):
-        if x is None:
-            return "--"
-        return round(x, 1) if isinstance(x, (int, float)) else x
-
-    current_price = r(result.get("current_price"))
-    best_buy_5m = r(result.get("best_buy_5m"))
-    best_sell_5m = r(result.get("best_sell_5m"))
-    est_high15 = r(result.get("true_high15"))
-    est_low15 = r(result.get("true_low15"))
-    est_high_full_day = r(result.get("true_high_full"))
-    est_low_full_day = r(result.get("true_low_full"))
-    score = r(result.get("predicted_score"))
-    actual = r(result.get("actual_result"))
-    ts = result.get("timestamp")
-
-    # --- 🔎 智慧防禦型 Beta 係數抓取 (先看快取，沒有再抓 info) ---
-    beta_text = "N/A"
-    if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
-        beta_text = PREDICTION_CACHE[sym]["beta_cached"]
-    else:
-        try:
-            ticker = yf.Ticker(sym)
-            beta_val = ticker.info.get('beta')
-            if beta_val is not None:
-                beta_text = str(round(beta_val, 2))
-                if sym not in PREDICTION_CACHE:
-                    PREDICTION_CACHE[sym] = {}
-                PREDICTION_CACHE[sym]["beta_cached"] = beta_text
-        except Exception:
-            beta_text = "N/A"
-
-    try:
-        val = float(score) if (score is not None and score != "--") else 0
-        trend_percent = max(min(val * 100 + 50, 100), 0)
-    except:
-        trend_percent = 50
-
-    try:
-        act_val = float(actual) if (actual is not None and actual != "--") else 0
-        heat_alpha = min(abs(act_val) * 5, 0.8)
-    except:
-        heat_alpha = 0
-
-    from config.loader import load_stock_config
-    stock_config = load_stock_config()
-    links_html = ""
-    for s in stock_config.keys():
-        links_html += f'<a href="/dashboard/{s}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{s}</a>\n'
-# =========================================================================
-# 📊 [第三段 - 3B] 個股 Dashboard 網頁 UI 結構與變數替換
-# =========================================================================
-    raw_html = """
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>__SYMBOL__ Prediction Dashboard</title>
-    <style>
-        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1120; color: #e5e7eb; }
-        .home-btn { display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }
-        .home-btn:hover { background: #374151; }
-        .container { max-width: 960px; margin: 0 auto; padding: 20px; }
-        .countdown { font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }
-        .title { font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
-        .subtitle { font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-        .card { border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }
-        .card:hover { transform: scale(1.03); }
-        .card-title { font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }
-        .card-value { font-size: 1.6rem; font-weight: 600; }
-        .trend-bar { height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 __TREND_PERCENT__%, #4caf50 __TREND_PERCENT__%); }
-        .heat { height: 10px; border-radius: 5px; margin-top: 10px; background: rgba(255, 255, 255, __HEAT_ALPHA__); }
-        .footer { margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }
-        .card-group-1 { background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); backdrop-filter: blur(6px); }
-        .card-group-2 { background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); backdrop-filter: blur(6px); }
-        .card-group-3 { background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); backdrop-filter: blur(6px); }
-        .card-group-4 { background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); backdrop-filter: blur(6px); }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <img src="/volume_chart/__SYMBOL__" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Volume and Close Price Chart">
-        <a class="home-btn" href="/">🏠 回主頁</a>
-        <div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">__LINKS_HTML__</div>
-        <div class="title">__SYMBOL__ Prediction Dashboard</div>
-        <div class="subtitle">深色金融風 · 即時更新 · 手機優化</div>
-        <div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
-        <script>
-            let sec = 60;
-            setInterval(() => { sec--; if (sec <= 0) sec = 60; document.getElementById('count').innerText = sec; }, 1000);
-            async function refreshPrice() {
-                try {
-                    let res = await fetch("/predict/__SYMBOL__");
-                    if (!res.ok) return;
-                    let data = await res.json();
-                    if(data.current_price) { document.getElementById("price").innerText = Number(data.current_price).toFixed(1); }
-                } catch (e) { console.log("更新失敗", e); }
-            }
-            setInterval(refreshPrice, 5000);
-        </script>
-        <div class="grid">
-            <div class="card card-group-1"><div class="card-title">Currently Price (目前價格)</div><div class="card-value" id="price">__CURRENT_PRICE__</div><div class="trend-bar"></div></div>
-            <div class="card card-group-1"><div class="card-title">Beta Coefficient (Beta 係數)</div><div class="card-value">__BETA_TEXT__</div></div>
-            <div class="card card-group-2"><div class="card-title">5M Best Buy (5分鐘最佳買入價)</div><div class="card-value">__BEST_BUY_5M__</div><div class="heat"></div></div>
-            <div class="card card-group-2"><div class="card-title">5M Best Sell (5分鐘最佳賣出價)</div><div class="card-value">__BEST_SELL_5M__</div><div class="heat"></div></div>
-            <div class="card card-group-3"><div class="card-title">15M Est High (15分鐘預估最高價)</div><div class="card-value">__EST_HIGH15__</div></div>
-            <div class="card card-group-3"><div class="card-title">15M Est Low (15分鐘預估最低價)</div><div class="card-value">__EST_LOW15__</div></div>
-            <div class="card card-group-4"><div class="card-title">Full Day Est High (整天預估最高價)</div><div class="card-value">__EST_HIGH_FULL_DAY__</div></div>
-            <div class="card card-group-4"><div class="card-title">Full Day Est Low (整天預估最低價)</div><div class="card-value">__EST_LOW_FULL_DAY__</div></div>
-        </div>
-        <div class="footer">更新時間：__TS__</div>
-    </div>
-</body>
-</html>
-"""
-    final_html = raw_html.replace("__SYMBOL__", str(symbol)) \
-                         .replace("__TREND_PERCENT__", str(trend_percent)) \
-                         .replace("__HEAT_ALPHA__", str(heat_alpha)) \
-                         .replace("__LINKS_HTML__", str(links_html)) \
-                         .replace("__CURRENT_PRICE__", str(current_price)) \
-                         .replace("__BETA_TEXT__", str(beta_text)) \
-                         .replace("__BEST_BUY_5M__", str(best_buy_5m)) \
-                         .replace("__BEST_SELL_5M__", str(best_sell_5m)) \
-                         .replace("__EST_HIGH15__", str(est_high15)) \
-                         .replace("__EST_LOW15__", str(est_low15)) \
-                         .replace("__EST_HIGH_FULL_DAY__", str(est_high_full_day)) \
-                         .replace("__EST_LOW_FULL_DAY__", str(est_low_full_day)) \
-                         .replace("__TS__", str(ts))
-    return HTMLResponse(content=final_html)
 # =========================================================================
 # 📊 [第三段 - 3C] 首頁發光入口按鈕 ＆ 系統終端路由 (全功能復活版)
 # =========================================================================
@@ -686,7 +587,10 @@ def dashboard(symbol: str):
 @app.get("/", response_class=HTMLResponse)
 def home():
     from config.loader import load_stock_config
-    stock_config = load_stock_config()
+    try:
+        stock_config = load_stock_config()
+    except Exception:
+        stock_config = {}
     
     categories_set = set()
     search_options_html = ""
@@ -751,7 +655,7 @@ def home():
         </a>
         
         <div class="search-container">
-            <input type="text" id="stockSearch" class="search-input" list="stockList" placeholder="輸入關鍵字或選擇股票... (EX: MU)" onkeypress="handleKeyPress(event)">
+            <input type="text" id="stockSearch" class="search-input" list="stockList" placeholder="輸入關鍵字或選擇股票... (EX: AMAT)" onkeypress="handleKeyPress(event)">
             <datalist id="stockList">{search_options_html}</datalist>
             <button class="search-btn" onclick="goToDashboard()">直達 ➔</button>
         </div>
@@ -778,7 +682,11 @@ def home():
 @app.get("/category/{cat_name}", response_class=HTMLResponse)
 def category_page(cat_name: str):
     from config.loader import load_stock_config
-    stock_config = load_stock_config()
+    try:
+        stock_config = load_stock_config()
+    except Exception:
+        stock_config = {}
+        
     buttons_html = ""
     for symbol, cfg in stock_config.items():
         if cfg.get("category") == cat_name:
