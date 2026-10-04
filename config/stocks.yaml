@@ -38,7 +38,7 @@ ATEYY:
   data_source: finnhub
   refresh_interval: 60
   display_name: Advantest Corp
-  category: "tech"
+  category: "semi-equipment"   # 新增這行：半導體設備
 
 SHOP:
   model_type: tech
@@ -46,3 +46,10 @@ SHOP:
   refresh_interval: 60
   display_name: Shopify Inc
   category: "software"         # 新增這行：雲端軟體 / 電商平台
+
+AMAT:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: Applied Materials
+  category: "semi-equipment"   # 新增這行：半導體設備
