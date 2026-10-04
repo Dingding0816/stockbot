@@ -578,6 +578,73 @@ def quant_matrix_page():
     return HTMLResponse(content=final_html)
 
 # =========================================================================
+# 📊 [第三段 - 3A] 滿血復活：個股 Dashboard 路由後端邏輯與數據解析
+# =========================================================================
+@app.get("/dashboard/{symbol}", response_class=HTMLResponse)
+def dashboard(symbol: str):
+    sym = symbol.upper()
+    try:
+        raw_result = run_prediction(symbol=sym, return_dict=True)
+        result = process_prediction_with_cache(sym, raw_result)
+    except Exception:
+        result = PREDICTION_CACHE.get(sym, {})
+
+    def r(x):
+        if x is None: return "--"
+        return round(x, 1) if isinstance(x, (int, float)) else x
+
+    current_price = r(result.get("current_price"))
+    best_buy_5m = r(result.get("best_buy_5m"))
+    best_sell_5m = r(result.get("best_sell_5m"))
+    est_high15 = r(result.get("true_high15"))
+    est_low15 = r(result.get("true_low15"))
+    est_high_full_day = r(result.get("true_high_full"))
+    est_low_full_day = r(result.get("true_low_full"))
+    score = r(result.get("predicted_score"))
+    actual = r(result.get("actual_result"))
+    ts = result.get("timestamp") if result.get("timestamp") else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    beta_text = "N/A"
+    if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
+        beta_text = PREDICTION_CACHE[sym]["beta_cached"]
+    else:
+        try:
+            ticker = yf.Ticker(sym, session=session)
+            beta_val = ticker.info.get('beta')
+            if beta_val is not None:
+                beta_text = str(round(beta_val, 2))
+                if sym not in PREDICTION_CACHE: PREDICTION_CACHE[sym] = {}
+                PREDICTION_CACHE[sym]["beta_cached"] = beta_text
+        except Exception:
+            beta_text = "N/A"
+
+    try:
+        val = float(score) if (score is not None and score != "--") else 0
+        trend_percent = max(min(val * 100 + 50, 100), 0)
+    except: trend_percent = 50
+
+    try:
+        act_val = float(actual) if (actual is not None and actual != "--") else 0
+        heat_alpha = min(abs(act_val) * 5, 0.8)
+    except: heat_alpha = 0
+
+    from config.loader import load_stock_config
+    try:
+        stock_config = load_stock_config()
+    except Exception:
+        stock_config = {}
+        
+    links_html = ""
+    for s in stock_config.keys():
+        links_html += f'<a href="/dashboard/{s}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{s}</a>\n'
+
+# =========================================================================
+# 📊 [第三段 - 3B] 個股 Dashboard 網頁 UI 結構與變數替換
+# =========================================================================
+    raw_dashboard_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>{{sym}} Prediction Dashboard</title><style>body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }} .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }} .container {{ max-width: 960px; margin: 0 auto; padding: 20px; }} .countdown {{ font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }} .title {{ font-size: 2rem; font-weight: 700; margin-bottom: 6px; }} .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }} .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }} .card {{ border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }} .card:hover {{ transform: scale(1.03); }} .card-title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }} .card-value {{ font-size: 1.6rem; font-weight: 600; }} .trend-bar {{ height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 {{trend_percent}}%, #4caf50 {{trend_percent}}%); }} .footer {{ margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }} .card-group-1 {{ background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); }} .card-group-2 {{ background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); }} .card-group-3 {{ background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); }} .card-group-4 {{ background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); }}</style></head><body><div class="container"><img src="/volume_chart/{{sym}}" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Chart"><a class="home-btn" href="/">🏠 回主頁</a><div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">{{links_html}}</div><div class="title">{{sym}} Prediction Dashboard</div><div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div><div class="grid"><div class="card card-group-1"><div class="card-title">Currently Price</div><div class="card-value" id="price">{{current_price}}</div><div class="trend-bar"></div></div><div class="card card-group-1"><div class="card-title">Beta Coefficient</div><div class="card-value">{{beta_text}}</div></div><div class="card card-group-2"><div class="card-title">5M Best Buy</div><div class="card-value">{{best_buy_5m}}</div></div><div class="card card-group-2"><div class="card-title">5M Best Sell</div><div class="card-value">{{best_sell_5m}}</div></div><div class="card card-group-3"><div class="card-title">15M Est High</div><div class="card-value">{{est_high15}}</div></div><div class="card card-group-3"><div class="card-title">15M Est Low</div><div class="card-value">{{est_low15}}</div></div><div class="card card-group-4"><div class="card-title">Full Day Est High</div><div class="card-value">{{est_high_full_day}}</div></div><div class="card card-group-4"><div class="card-title">Full Day Est Low</div><div class="card-value">{{est_low_full_day}}</div></div></div><div class="footer">更新時間：{{ts}}</div></div><script>let sec = 60; setInterval(() => {{ sec--; if (sec <= 0) sec = 60; document.getElementById('count').innerText = sec; }}, 1000); async function refreshPrice() {{ try {{ let res = await fetch("/predict/{{sym}}"); if (!res.ok) return; let data = await res.json(); if(data.current_price) {{ document.getElementById("price").innerText = Number(data.current_price).toFixed(1); }} }} catch (e) {{ }} }} setInterval(refreshPrice, 5000);</script></body></html>"""
+    return HTMLResponse(content=raw_dashboard_html)
+
+# =========================================================================
 # 📊 [第三段 - 3C] 首頁發光入口按鈕 ＆ 系統終端路由 (全功能復活版)
 # =========================================================================
 
