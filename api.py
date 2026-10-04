@@ -293,19 +293,15 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B - Part 1] 全新量化監控矩陣路由 (/matrix) - 核心動能精算
+# 📊 [第二段 - 2B - Part 1] 全新量化監控矩陣路由 (/matrix) - 快取防線與動能精算
 # =========================================================================
+MATRIX_HTML_CACHE = {"content": None, "last_cached_time": 0}
+
 @app.get("/matrix", response_class=HTMLResponse)
 def quant_matrix_page():
     from config.loader import load_stock_config
     import pytz
     
-    matrix_rows_html = ""
-    try:
-        stock_config = load_stock_config()
-    except Exception as e:
-        return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
-        
     # 💡 1. 嚴謹紐約時區精算
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
@@ -318,8 +314,21 @@ def quant_matrix_page():
             is_market_open = True
             
     mode_text = "⚡ 盤中 15M 極速即時監控模式" if is_market_open else "🗓️ 盤前/盤後 1D 長週期波段模式"
-    
-    # 💡 2. 配置自適應全全自動靜態快取
+
+    # 🔥 [記憶體快取核心防線] 
+    # 如果是週末或非開盤時間，且本地已經有算好的快取，直接一秒回傳，徹底阻斷 Render CPU 爆滿卡死！
+    current_time = time.time()
+    if not is_market_open and MATRIX_HTML_CACHE["content"] is not None:
+        if current_time - MATRIX_HTML_CACHE["last_cached_time"] < 600:
+            print("🧘 [雷達矩陣快取盾] 非開盤期間，直接秒傳記憶體雷達網頁，100% 阻斷超時！")
+            return HTMLResponse(content=MATRIX_HTML_CACHE["content"])
+
+    matrix_rows_html = ""
+    try:
+        stock_config = load_stock_config()
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
+        
     STATIC_BETA_MAP = {
         "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18, "AMAT": 1.62
     }
@@ -333,10 +342,7 @@ def quant_matrix_page():
             print(f"預測模型執行失敗 ({sym}): {e}")
             result = {}
 
-        # 快取防線
         final_beta = STATIC_BETA_MAP.get(sym, 1.50)
-
-        # 基礎數據容器定義
         price_score = 0.0
         vol_change = 0.0
         price_trend_text = "➡️ 持平"
@@ -348,9 +354,8 @@ def quant_matrix_page():
             ai_score = 0.0
 
         if is_market_open:
-            # ⚡ ⚡ 【第一分流：交易盤中】
             try:
-                df_15m = yf.download(sym, period="3d", interval="15m", progress=False, session=session, threads=False, timeout=4)
+                df_15m = yf.download(sym, period="3d", interval="15m", progress=False, session=session, threads=False, timeout=3)
                 if not df_15m.empty:
                     c_15m = df_15m['Close']
                     v_15m = df_15m['Volume']
@@ -361,22 +366,17 @@ def quant_matrix_page():
                     last_live_price = float(c_15m.values[-2])
                     price_score = float(current_live_price - last_live_price)
                     
-                    if price_score > 0: 
-                        price_trend_text = f"📈 急漲 ({current_live_price:.1f})"
-                    elif price_score < 0: 
-                        price_trend_text = f"📉 急跌 ({current_live_price:.1f})"
-                    else: 
-                        price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
+                    if price_score > 0: price_trend_text = f"📈 急漲 ({current_live_price:.1f})"
+                    elif price_score < 0: price_trend_text = f"📉 急跌 ({current_live_price:.1f})"
+                    else: price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                         
                     avg_vol_15m = float(v_15m.iloc[-21:-1].mean())
                     vol_change = float(v_15m.values[-1] - avg_vol_15m)
             except Exception as e:
-                print(f"⚠️ {sym} 15M 盤中精算失敗: {e}")
                 price_trend_text = "➡️ 異常觀望"
         else:
-            # 🗓️ 🗓️ 【第二分流：盤前/盤後】
             try:
-                hist_df = yf.download(sym, period="5d", interval="1d", progress=False, session=session, threads=False, timeout=4)
+                hist_df = yf.download(sym, period="5d", interval="1d", progress=False, session=session, threads=False, timeout=2)
                 if not hist_df.empty:
                     v_series = hist_df['Volume']
                     c_series = hist_df['Close']
@@ -390,12 +390,9 @@ def quant_matrix_page():
                     raw_price = result.get("current_price")
                     current_live_price = float(str(raw_price).strip()) if raw_price is not None else yesterday_close
                     
-                    if price_diff_wave > 0:
-                        price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
-                    elif price_diff_wave < 0:
-                        price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
-                    else:
-                        price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
+                    if price_diff_wave > 0: price_trend_text = f"📈 上漲 ({current_live_price:.1f})"
+                    elif price_diff_wave < 0: price_trend_text = f"📉 下跌 ({current_live_price:.1f})"
+                    else: price_trend_text = f"➡️ 持平 ({current_live_price:.1f})"
                         
                     last_vol = float(v_series.values[-1])
                     mean_vol = float(v_series.mean())
@@ -403,12 +400,10 @@ def quant_matrix_page():
                 else:
                     price_trend_text = "➡️ 觀察中"
             except Exception as e:
-                print(f"⚠️ 盤前歷史精算失敗 ({sym}): {e}")
                 price_trend_text = "➡️ 讀取失敗"
             
             price_score = float(ai_score)
 
-        # 💡 全自動降維防禦安全網
         try:
             if hasattr(vol_change, "ndim") and vol_change.ndim > 0: vol_change = float(vol_change.iloc)
             else: vol_change = float(vol_change)
@@ -420,84 +415,49 @@ def quant_matrix_page():
         except: price_score = 0.0
 
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
+
         # =========================================================================
-        # 📊 [第二段 - 2B - Part 2] 量化情境決策打標與 HTML 表格封裝 (接續 Part 1 迴圈內部)
+        # 📊 [2B - Part 2] 極簡無斷層版：量化情境分類與表格字串閉合 (接續 Part 1 迴圈內)
         # =========================================================================
         row_class = "row-normal"
         if final_beta > 1.5:
             if vol_change >= 0 and price_score > 0:
-                scen_num = "情境 1 (極度過熱)"
-                row_class = "row-warn"
-                if is_market_open:
-                    status = "<b>💥 目前價格相較前一刻瘋狂拉抬！</b>"
-                    buy_strat = "<b>🚫 不要追高！</b><br><small>短線急拉過熱，等盤中拉回。</small>"
-                    sell_strat = "<b>💰 分批停利！</b><br><small>這是極佳的極短線衝高拔檔點。</small>"
-                else:
-                    status = "易遭隔日沖減碼（拉回修正）"
-                    buy_strat = "開盤絕不追高"
-                    sell_strat = "開盤上漲則分批獲利了結"
+                scen_num, row_class = "情境 1 (極度過熱)", "row-warn"
+                status = "<b>💥 價格瘋狂拉抬！</b>" if is_market_open else "易遭隔日沖減碼修正"
+                buy_strat = "<b>🚫 不要追高！</b>" if is_market_open else "開盤絕不追高"
+                sell_strat = "<b>💰 分批停利！</b>" if is_market_open else "開盤上漲則分批獲利"
             elif vol_change >= 0 and price_score <= 0:
-                scen_num = "情境 2 (主力出貨)"
-                row_class = "row-danger"
-                if is_market_open:
-                    status = "<b>🚨 目前價格相較前一刻大跳水！主力集體逃跑</b>"
-                    buy_strat = "<b>🛑 絕對禁買！</b><br><small>這 15M 殺傷力極大，進場就是送死。</small>"
-                    sell_strat = "<b>⚡ 立刻砍倉 / 減碼！</b><br><small>留得青山在，防範連鎖踩踏暴跌。</small>"
-                else:
-                    status = "主力高位倒貨（恐慌踩踏）"
-                    buy_strat = "嚴禁抄底"
-                    sell_strat = "開盤若有小反彈無條件減碼"
+                scen_num, row_class = "情境 2 (主力出貨)", "row-danger"
+                status = "<b>🚨 價格大跳水！主力逃跑</b>" if is_market_open else "主力高位倒貨恐慌踩踏"
+                buy_strat = "<b>🛑 絕對禁買！</b>" if is_market_open else "嚴禁抄底"
+                sell_strat = "<b>⚡ 立刻砍倉減碼！</b>" if is_market_open else "開盤無條件減碼"
             else:
-                scen_num = "情境 3 (強勢鎖籌)"
-                row_class = "row-success"
-                if is_market_open:
-                    status = "<b>🔥 目前價格無量緩步墊高！主力控盤惜售</b>"
-                    buy_strat = "<b>🛒 果斷加碼！</b><br><small>極健康的惜售結構，震盪就是買點。</small>"
-                    sell_strat = "<b>💎 死死抱緊！</b><br><small>短線無退潮跡象，讓獲利隨現價奔跑。</small>"
-                else:
-                    status = "籌碼高度鎖定（驚天惜售）"
-                    buy_strat = "開盤可逢低適量試倉"
-                    sell_strat = "持股續抱"
+                scen_num, row_class = "情境 3 (強勢鎖籌)", "row-success"
+                status = "<b>🔥 價格無量緩步墊高！</b>" if is_market_open else "籌碼高度鎖定驚天惜售"
+                buy_strat = "<b>🛒 果斷加碼！</b>" if is_market_open else "開盤可逢低適量試倉"
+                sell_strat = "<b>💎 死死抱緊！</b>" if is_market_open else "持股續抱"
         else:
             if vol_change >= 0 and price_score > 0:
-                scen_num = "情境 4 (健康多頭)"
-                row_class = "row-success"
-                if is_market_open:
-                    status = "<b>🛡️ 目前價格穩健向上，大資金正在吸籌</b>"
-                    buy_strat = "<b>🛍️ 積極建倉！</b><br><small>分批買進，這是最安全的獲利結構。</small>"
-                    sell_strat = "<b>🧘 持股續抱！</b><br><small>長線多頭動能穩健，毫無賣出訊號。</small>"
-                else:
-                    status = "穩健型價量齊揚（波段起漲）"
-                    buy_strat = "開盤可積極分批佈局"
-                    sell_strat = "中長線持股續抱"
+                scen_num, row_class = "情境 4 (健康多頭)", "row-success"
+                status = "<b>🛡️ 價格穩健向上，資金吸籌</b>" if is_market_open else "穩健型價量齊揚波段起漲"
+                buy_strat = "<b>🛍️ 積極建倉！</b>" if is_market_open else "開盤可積極分批佈局"
+                sell_strat = "<b>🧘 持股續抱！</b>" if is_market_open else "中長線持股續抱"
             elif vol_change < 0 and price_score < 0:
                 scen_num = "情境 5 (無量陰跌)"
-                if is_market_open:
-                    status = "<b>目前價格沉悶陰跌，處於無量死水期</b>"
-                    buy_strat = "<b>⏳ 完全觀望！</b><br><small>不要買，買了只會卡死盤中資金。</small>"
-                    sell_strat = "<b>✂️ 直接換股！</b><br><small>立刻汰弱留強，換去情境3或4。</small>"
-                else:
-                    status = "陰跌退潮期（缺乏資金關注）"
-                    buy_strat = "資金保留，持續觀望"
-                    sell_strat = "分批弱勢汰換"
+                status = "<b>目前價格沉悶陰跌</b>" if is_market_open else "陰跌退潮期缺乏資金關注"
+                buy_strat = "<b>⏳ 完全觀望！</b>" if is_market_open else "資金保留，持續觀望"
+                sell_strat = "<b>✂️ 直接換股！</b>" if is_market_open else "分批弱勢汰換"
             else:
-                scen_num = "情境 6 (誘多陷阱)"
-                row_class = "row-warn"
-                if is_market_open:
-                    status = "<b>🩸 目前價格無量緩跌，高 Beta 暴跌前兆</b>"
-                    buy_strat = "<b>0️⃣ 嚴禁碰這隻！</b><br><small>大盤一回檔這隻會跌最慘，絕不接刀。</small>"
-                    sell_strat = "<b>📉 果斷停損！</b><br><small>破前低就必須切單離場，防跳水。</small>"
-                else:
-                    status = "高敏感無量陰跌（殺多起點）"
-                    buy_strat = "絕對不要左側接刀"
-                    sell_strat = "及時停損或換股"
+                scen_num, row_class = "情境 6 (誘多陷阱)", "row-warn"
+                status = "<b>🩸 價格無量緩跌，暴跌前兆</b>" if is_market_open else "高敏感無量陰跌殺多起點"
+                buy_strat = "<b>0️⃣ 嚴禁碰這隻！</b>" if is_market_open else "絕對不要左側接刀"
+                sell_strat = "<b>📉 果斷停損！</b>" if is_market_open else "及時停損或換股"
 
-        # 💡 滿血拼接：這段會完美把數據包進 HTML 的表格行 (tr) 中
         matrix_rows_html += f"""
         <tr class="{row_class}">
             <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{sym}" style="color:#60a5fa; text-decoration:none;">📈 {sym}</a></td>
             <td style="color:#9ca3af; font-size:0.9rem;">{scen_num}</td>
-            <td>{final_beta:.2f} {"(高敏感)" if final_beta > 1.5 else "(穩健)"}</td>
+            <td>{final_beta:.2f}</td>
             <td>{vol_trend}</td>
             <td style="font-weight:bold;">{price_trend_text}</td>
             <td>{status}</td>
@@ -505,76 +465,16 @@ def quant_matrix_page():
             <td style="color:#f87171;">{sell_strat}</td>
         </tr>
         """
-        
-    # 💡 注意：迴圈結束後，此處將由 [第二段 - 2C] 接棒進行整頁 HTML 的打包輸出
 
-    # =========================================================================
-    # 📊 [第二段 - 2C 終極合體版] 監控矩陣 HTML UI 模板 ＆ 100% 阻斷瀏覽器快取死鎖
-    # =========================================================================
-    raw_html = f"""<!DOCTYPE html><html lang="zh-TW">
-    <head>
-        <meta charset="UTF-8">
-        
-        <!-- 💡 終極防快取核心：強制阻斷所有手機、電腦瀏覽器與雲端網關的快取，確保每 60 秒刷出最新活資料！ -->
-        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-        <meta http-equiv="Pragma" content="no-cache">
-        <meta http-equiv="Expires" content="0">
-        
-        <title>量化監控矩陣雷達</title>
-        <style>
-            body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }}
-            .container {{ max-width: 1200px; margin: 0 auto; padding: 30px 20px; }}
-            .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }}
-            .title {{ font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-            .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }}
-            .matrix-table {{ width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }}
-            .matrix-table th {{ background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; }}
-            .matrix-table td {{ padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }}
-            .row-success {{ background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }}
-            .row-warn {{ background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }}
-            .row-danger {{ background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }}
-            small {{ display: block; margin-top: 4px; font-size: 0.8rem; opacity: 0.8; }}
-            .mode-badge {{ display: inline-block; padding: 6px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 20px; color: #93c5fd; font-weight: bold; font-size: 0.9rem; margin-bottom: 16px; }}
-        </style>
-    </head>
-    <body>
-    <div class="container">
-        <a class="home-btn" href="/">🏠 回首頁</a>
-        <div class="title">📊 動態動能與風險量化矩陣圖</div>
-        <div class="subtitle">即時多股監控雷達 · 網頁每 60 秒全自動重新整理刷新 · 當前倒數：<span id="matrix-timer">60</span>秒</div>
-        <table class="matrix-table">
-            <thead>
-                <tr>
-                    <th style="width: 10%;">股票代號</th>
-                    <th style="width: 12%;">目前符合情境</th>
-                    <th style="width: 10%;">Beta 條件</th>
-                    <th style="width: 11%;">成交量趨勢</th>
-                    <th style="width: 11%;">目前價格趨勢</th>
-                    <th style="width: 18%;">📊 系統判斷結果</th>
-                    <th style="width: 14%;">🟢 建議買進</th>
-                    <th style="width: 14%;">🔴 建議賣出</th>
-                </tr>
-            </thead>
-            <tbody>
-                {matrix_rows_html}
-            </tbody>
-        </table>
-    </div>
-    <script>
-        let matrixSec = 60; 
-        setInterval(() => {{ 
-            matrixSec--; 
-            if (matrixSec <= 0) {{ 
-                window.location.href = window.location.pathname + '?t=' + new Date().getTime();
-            }} else {{ 
-                document.getElementById("matrix-timer").innerText = matrixSec; 
-            }} 
-        }}, 1000);
-    </script>
-    </body></html>"""
+    # 💡 2C UI 結構打包輸出 (此處已成功跳出 for 迴圈，縮排為 4 空格)
+    raw_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title><style>body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }} .container {{ max-width: 1200px; margin: 0 auto; padding: 30px 20px; }} .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }} .title {{ font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }} .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }} .matrix-table {{ width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }} .matrix-table th {{ background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; }} .matrix-table td {{ padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }} .row-success {{ background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }} .row-warn {{ background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }} .row-danger {{ background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }} .mode-badge {{ display: inline-block; padding: 6px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 20px; color: #93c5fd; font-weight: bold; font-size: 0.9rem; margin-bottom: 16px; }}</style></head><body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a><div class="title">📊 動態動能與風險量化矩陣圖</div><div class="subtitle">即時多股監控雷達 · 網頁每 60 秒全自動刷新 · 當前倒數：<span id="matrix-timer">60</span>秒</div><table class="matrix-table"><thead><tr><th>股票代號</th><th>目前符合情境</th><th>Beta</th><th>成交量趨勢</th><th>目前價格趨勢</th><th>📊 系統判斷結果</th><th>🟢 建議買進</th><th>🔴 建議賣出</th></tr></thead><tbody>{matrix_rows_html}</tbody></table></div><script>let matrixSec = 60; setInterval(() => {{ matrixSec--; if (matrixSec <= 0) {{ window.location.href = window.location.pathname + '?t=' + new Date().getTime(); }} else {{ document.getElementById("matrix-timer").innerText = matrixSec; }} }}, 1000);</script></body></html>"""
     
-    final_html = raw_html.replace('<div class="title">📊 動態動能與風險量化矩陣圖</div>', 
-                                  f'<div class="title">📊 動態動能與風險量化矩陣圖</div>\n<div class="mode-badge">{mode_text}</div>')
+    final_html = raw_html.replace('<div class="title">📊 動態動能與風險量化矩陣圖</div>', f'<div class="title">📊 動態動能與風險量化矩陣圖</div>\n<div class="mode-badge">{mode_text}</div>')
+    
+    if not is_market_open:
+        MATRIX_HTML_CACHE["content"] = final_html
+        MATRIX_HTML_CACHE["last_cached_time"] = current_time
+
     return HTMLResponse(content=final_html)
 
 # =========================================================================
