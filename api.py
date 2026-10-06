@@ -621,6 +621,11 @@ def home():
             📊 開盤量化監控矩陣雷達（多股即時對照）➔
         </a>
         
+        <!-- 🤖 [新加入] 前往獨立 AI 經紀人性格選擇網頁入口 -->
+        <a class="matrix-radar-btn" href="/agent" style="background: linear-gradient(135deg, #a855f7, #ec4899); box-shadow: 0 4px 20px rgba(236, 72, 153, 0.4);">
+            🤖 AI 智能經紀人資產配置 ➔
+        </a>        
+        
         <div class="search-container">
             <input type="text" id="stockSearch" class="search-input" list="stockList" placeholder="輸入關鍵字或選擇股票... (EX: AMAT)" onkeypress="handleKeyPress(event)">
             <datalist id="stockList">{search_options_html}</datalist>
@@ -692,3 +697,155 @@ def category_page(cat_name: str):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+# =========================================================================
+# 🤖 [AI 經紀人系統擴充] - 獨立性格選擇網頁與雙流派動態資產精算
+# =========================================================================
+
+# 1. 獨立的 AI 經紀人主網頁路由（提供大眾選擇性格流派）
+@app.get("/agent", response_class=HTMLResponse)
+def agent_hub_page():
+    html = """
+    <!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8">
+    <title>AI 智能投資經紀人</title>
+    <style>
+        body { background: #0b1120; color: #e5e7eb; font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; }
+        .wrap { max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 2.5rem; font-weight: 800; background: linear-gradient(90deg, #a855f7, #ec4899); -webkit-background-clip: text; color: transparent; margin-bottom: 10px; }
+        h3 { color: #9ca3af; margin-bottom: 40px; }
+        .back-link { display: inline-block; margin-bottom: 25px; color: #60a5fa; text-decoration: none; font-weight: bold; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 40px; }
+        .style-card { background: rgba(31, 41, 55, 0.5); border: 1px solid #374151; border-radius: 16px; padding: 30px 20px; cursor: pointer; transition: all 0.25s ease; backdrop-filter: blur(6px); }
+        .style-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(236, 72, 153, 0.2); }
+        .aggressive { border-top: 5px solid #ec4899; }
+        .conservative { border-top: 5px solid #34d399; }
+        .card-title { font-size: 1.6rem; font-weight: bold; margin-bottom: 12px; }
+        .aggressive .card-title { color: #f472b6; }
+        .conservative .card-title { color: #34d399; }
+        .card-desc { font-size: 0.95rem; color: #9ca3af; line-height: 1.6; text-align: left; margin-bottom: 20px; }
+        .go-btn { background: #1f2937; padding: 10px 20px; border-radius: 8px; font-weight: bold; border: 1px solid #4b5563; }
+        .style-card:hover .go-btn { background: linear-gradient(135deg, #a855f7, #ec4899); color: white; border-color: transparent; }
+    </style>
+    </head><body><div class="wrap">
+        <a class="back-link" href="/">← 返回 Silicon Matrix 首頁</a>
+        <h1>🤖 AI 智能資產操盤經紀人</h1>
+        <h3>大眾化動態資產配置矩陣中樞</h3>
+        <div class="grid">
+            <div class="style-card aggressive" onclick="startAgent('aggressive')">
+                <div class="card-title">⚡ 激進短線派</div>
+                <div class="card-desc">・策略：追求極短線獲利與爆發力黑馬股。<br>・選股：優先納入 AI 分數正向且 <b>高 Beta 係數</b> 標的。<br>・權重：採取 Beta 正比分配，波動越大，資金放越多！</div>
+                <div class="go-btn">選擇此流派 ➔</div>
+            </div>
+            <div class="style-card conservative" onclick="startAgent('conservative')">
+                <div class="card-title">🛡️ 保守穩健派</div>
+                <div class="card-desc">・策略：追求資產平穩與細水長流，防守第一。<br>・選股：優先納入 AI 分數好且 <b>低 Beta 係數</b> 權值股。<br>—權重：採取傳統風險平價公式，波動越高分配越少！</div>
+                <div class="go-btn">選擇此流派 ➔</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        function startAgent(style) {
+            let styleText = style === 'aggressive' ? '【⚡激進短線派】' : '【🛡️保守穩健派】';
+            let amount = prompt("🤖 您已選擇 " + styleText + "\\n\\n請輸入今天預計操作與配置的總投資金額 (單位：美金 USD)：", "100000");
+            if (amount === null) return;
+            let cleanedAmount = parseFloat(amount.replace(/,/g, ''));
+            if (isNaN(cleanedAmount) || cleanedAmount <= 0) {
+                alert("⚠️ 請輸入大於 0 的有效數字。"); return;
+            }
+            window.location.href = "/agent/advise?style=" + style + "&funds=" + cleanedAmount;
+        }
+    </script>
+    </body></html>
+    """
+    return HTMLResponse(content=html)
+
+# 2. 雙流派核心計算 API 路由
+@app.get("/agent/advise", response_class=HTMLResponse)
+def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
+    from config.loader import load_stock_config
+    try: stock_config = load_stock_config()
+    except Exception: stock_config = {}
+
+    STATIC_BETA_MAP = {
+        "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18, "AMAT": 1.62, "BAND": 1.30
+    }
+    
+    candidates = []
+    for sym in stock_config.keys():
+        sym = sym.upper()
+        try:
+            res = run_prediction(symbol=sym, return_dict=True)
+            score = float(res.get("predicted_score", 0.0))
+            price = float(res.get("current_price", 100.0))
+            if score > 0:
+                candidates.append({
+                    "sym": sym, "score": score, "price": price, "beta": STATIC_BETA_MAP.get(sym, 1.5),
+                    "b1": float(res.get("best_buy_5m", price * 0.99)),
+                    "p2": float(res.get("true_low15", price * 0.985)),
+                    "p3": float(res.get("true_low_full", price * 0.97))
+                })
+        except Exception: continue
+
+    if len(candidates) == 0:
+        for sym in ["AMAT", "META", "MU"]:
+            candidates.append({
+                "sym": sym, "score": 0.5, "price": 150.0, "beta": STATIC_BETA_MAP.get(sym, 1.5),
+                "b1": 148.5, "p2": 147.0, "p3": 145.0
+            })
+
+    # 💡 雙流派選股核心分流
+    if style == "aggressive":
+        # 激進型：依 Beta 從高到低排序，選前 3 名
+        candidates = sorted(candidates, key=lambda x: x["beta"], reverse=True)[:3]
+        # 數學權重：與 Beta 成正比 (Beta 越高，分越多)
+        weight_sum = sum([x["beta"] for x in candidates])
+        for x in candidates: x["weight"] = x["beta"] / weight_sum
+    else:
+        # 保守型：依 Beta 從低到高排序，選前 3 名
+        candidates = sorted(candidates, key=lambda x: x["beta"])[:3]
+        # 數學權重：風險平價 (Inverse-Beta，Beta 越低，分越多)
+        inv_sum = sum([1.0 / x["beta"] for x in candidates])
+        for x in candidates: x["weight"] = (1.0 / x["beta"]) / inv_sum
+
+    cards_html = ""
+    for item in candidates:
+        allocated = funds * item["weight"]
+        f1, f2, f3 = allocated * 0.3, allocated * 0.4, allocated * 0.3
+        s1 = max(int(f1 / item["b1"]), 1)
+        s2 = max(int(f2 / item["p2"]), 1)
+        s3 = max(int(f3 / item["p3"]), 1)
+
+        cards_html += f"""
+        <div style="background:rgba(31,41,55,0.4); border:1px solid #1f2937; border-radius:14px; padding:20px; margin-bottom:15px;">
+            <div style="display:flex; justify-content:space-between; border-bottom:1px solid #374151; padding-bottom:10px; margin-bottom:12px;">
+                <span style="font-size:1.3rem; font-weight:bold; color:#60a5fa;">📈 {item['sym']} (Beta: {item['beta']:.2f})</span>
+                <span style="color:#34d399; font-weight:bold;">配置金額: ${allocated:,.1f} USD ({item['weight']*100:.1f}%)</span>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; font-size:0.9rem;">
+                <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
+                    <div style="color:#9ca3af;">🎯 第一批 (試倉 30%)</div>
+                    <div style="font-size:1.1rem; margin:4px 0;">價格：<b style="color:#f58220;">${item['b1']:.1f}</b></div>
+                    <div style="color:#34d399; font-weight:bold;">買進：{s1} 股</div>
+                </div>
+                <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
+                    <div style="color:#9ca3af;">⏳ 第二批 (拉回 40%)</div>
+                    <div style="font-size:1.1rem; margin:4px 0;">價格：<b style="color:#f58220;">${item['p2']:.1f}</b></div>
+                    <div style="color:#34d399; font-weight:bold;">買進：{s2} 股</div>
+                </div>
+                <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
+                    <div style="color:#9ca3af;">🩸 第三批 (深蹲 30%)</div>
+                    <div style="font-size:1.1rem; margin:4px 0;">價格：<b style="color:#f58220;">${item['p3']:.1f}</b></div>
+                    <div style="color:#34d399; font-weight:bold;">買進：{s3} 股</div>
+                </div>
+            </div>
+        </div>
+        """
+
+    style_title = "⚡ 激進短線衝刺矩陣" if style == "aggressive" else "🛡️ 保守穩健防禦矩陣"
+    report_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>AI經紀人精算報告</title>
+    <style>body {{ background:#0b1120; color:#e5e7eb; font-family:-apple-system,sans-serif; padding:40px 20px; }} .box {{ max-width:850px; margin:0 auto; }} .btn {{ display:inline-block; padding:10px 16px; background:#1f2937; color:#93c5fd; border-radius:8px; text-decoration:none; margin-bottom:20px; font-weight:bold; border:1px solid #374151; }}</style>
+    </head><body><div class="box"><a class="btn" href="/agent">← 重新選擇性格</a>
+    <div style="font-size:2rem; font-weight:bold; margin-bottom:5px; background:linear-gradient(to right, #60a5fa, #34d399); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">🤖 AI 經紀人精算報告：{style_title}</div>
+    <div style="color:#9ca3af; margin-bottom:25px;">下單操作總資金：<span style="color:white; font-weight:bold; font-size:1.1rem;">${funds:,.1f} USD</span></div>
+    {cards_html}</div></body></html>"""
+    return HTMLResponse(content=report_html)
