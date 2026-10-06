@@ -761,22 +761,32 @@ def agent_hub_page():
 
 # 2. 雙流派核心計算 API 路由
 @app.get("/agent/advise", response_class=HTMLResponse)
-def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
+def agent_advise_page(style: str = "conservative", funds: float = 100000.0, include: str = None):
     from config.loader import load_stock_config
     try: stock_config = load_stock_config()
     except Exception: stock_config = {}
     
+    # 💡 1. 解析前端 JS 傳回的使用者打勾清單 (EX: "MXL,SHOP")
+    include_list = []
+    if include and include.strip():
+        include_list = [x.strip().upper() for x in include.split(",") if x.strip()]
+    
     candidates = []
     for sym in stock_config.keys():
         sym = sym.upper()
+        
+        # 💡 若使用者已經有自訂勾選結果，只要目前這檔股票不在使用者要的清單內，直接全自動跳過！
+        if len(include_list) > 0 and sym not in include_list:
+            continue
+            
         try:
             res = run_prediction(symbol=sym, return_dict=True)
             score = float(res.get("predicted_score", 0.0))
             price = float(res.get("current_price", 100.0))
             
-            if score > 0:
-                # 🛡️ 智慧動態防線：優先看預測快取，沒有的話就透過防阻擋 session 向 yfinance 抓取最新即時 Beta
-                beta_val = 1.50  # 設一個預設的穩健值作為萬一斷訊時的保底
+            # 若是使用者主動保留/指定的股票，即使今天預測分數小於等於0，也強迫納入權重精算
+            if score > 0 or len(include_list) > 0:
+                beta_val = 1.50
                 if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
                     beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
                 else:
@@ -787,20 +797,18 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
                             beta_val = float(fetched_beta)
                             if sym not in PREDICTION_CACHE: PREDICTION_CACHE[sym] = {}
                             PREDICTION_CACHE[sym]["beta_cached"] = str(round(beta_val, 2))
-                    except Exception:
-                        pass # 萬一 yfinance 短暫異常，直接走 1.5 預設值，保證網頁絕不卡死
+                    except Exception: pass
 
                 candidates.append({
-                    "sym": sym, "score": score, "price": price, "beta": beta_val,
+                    "sym": sym, "score": max(score, 0.1), "price": price, "beta": beta_val,
                     "b1": float(res.get("best_buy_5m", price * 0.99)),
                     "p2": float(res.get("true_low15", price * 0.985)),
                     "p3": float(res.get("true_low_full", price * 0.97))
                 })
         except Exception: continue
 
-    # 💡 萬一全盤皆墨（例如週末剛開機無快取），自動根據配置檔目前有的前 3 隻當作展示保底，絕不寫死！
     if len(candidates) == 0:
-        backup_symbols = list(stock_config.keys())[:3] if stock_config else ["AMAT", "META", "MU"]
+        backup_symbols = include_list if len(include_list) > 0 else (list(stock_config.keys())[:3] if stock_config else ["AMAT", "META", "MU"])
         for s in backup_symbols:
             s_upper = s.upper()
             candidates.append({
@@ -808,21 +816,19 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
                 "b1": 148.5, "p2": 147.0, "p3": 145.0
             })
 
-    # === 💡 複合量化精算模型分流：AI 分數 × 動態抓取的即時 Beta ===
+    # === 💡 2. 雙流派複合量化權重計算 (若使用者「沒有」指定清單，才由系統篩選推薦前3名) ===
     if style == "aggressive":
-        # 【激進短線派】：動態計算每一隻新股票的複合分數
         for x in candidates:
             x["combo_score"] = x["score"] * x["beta"]
-        
-        candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
+        if len(include_list) == 0:
+            candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
         combo_sum = sum([x["combo_score"] for x in candidates])
         for x in candidates: x["weight"] = x["combo_score"] / combo_sum
     else:
-        # 【保守穩健派】：動態計算每一隻新股票的穩定分數
         for x in candidates:
             x["combo_score"] = x["score"] / x["beta"]
-            
-        candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
+        if len(include_list) == 0:
+            candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
         combo_sum = sum([x["combo_score"] for x in candidates])
         for x in candidates: x["weight"] = x["combo_score"] / combo_sum
 
@@ -832,13 +838,10 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
         allocated = funds * item["weight"]
         f1, f2, f3 = allocated * 0.3, allocated * 0.4, allocated * 0.3
         
-        # 🛡️ 操盤手安全防線：拒絕開盤接刀！
-        # 第一批直接強迫從預估現價往下推 1.5% 避開開盤暴跌，二、三批順勢拉開網格差
         base_start_price = item["b1"] if item["b1"] > 0 else item["price"]
-        
-        buy_price_1 = base_start_price * 0.985  # 避開第一波衝高，往下安全試倉 1.5%
-        buy_price_2 = base_start_price * 0.960  # 短線大拉回，拉開 4.0%
-        buy_price_3 = base_start_price * 0.935  # 恐慌超跌抄底，拉開 6.5%
+        buy_price_1 = base_start_price * 0.985
+        buy_price_2 = base_start_price * 0.960
+        buy_price_3 = base_start_price * 0.935
         
         s1 = max(int(f1 / buy_price_1), 1)
         s2 = max(int(f2 / buy_price_2), 1)
@@ -870,39 +873,71 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
         </div>
         """
 
-    # === 💡 替換此段 report_html 模板，完美新增發光風險 Hint ===
+    # 💡 3. 全自動 Checkbox 面板與前端 JS 勾選收集器閉合
     style_title = "⚡ 激進短線衝刺矩陣" if style == "aggressive" else "🛡️ 保守穩健防禦矩陣"
     
+    checkboxes_html = ""
+    for s_key in stock_config.keys():
+        s_upper = s_key.upper()
+        # 比對目前這檔股票是否有入選展示，有的話就幫使用者預設打勾
+        is_checked = "checked" if any(x["sym"] == s_upper for x in candidates) else ""
+        checkboxes_html += f"""
+        <label style="margin-right: 14px; font-size: 1.05rem; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+            <input type="checkbox" class="stock-chk" value="{s_upper}" {is_checked} style="width: 17px; height: 17px; cursor: pointer;"> {s_upper}
+        </label>
+        """
+
     report_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>AI經紀人精算報告</title>
     <style>
         body {{ background:#0b1120; color:#e5e7eb; font-family:-apple-system,sans-serif; padding:40px 20px; }} 
         .box {{ max-width:850px; margin:0 auto; }} 
         .btn {{ display:inline-block; padding:10px 16px; background:#1f2937; color:#93c5fd; border-radius:8px; text-decoration:none; margin-bottom:20px; font-weight:bold; border:1px solid #374151; }}
+        .risk-hint {{ background: rgba(248, 113, 113, 0.05); border: 1px solid rgba(248, 113, 113, 0.2); padding: 12px 16px; border-radius: 8px; color: #f87171; font-size: 0.9rem; font-weight: bold; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; box-shadow: 0 0 15px rgba(248, 113, 113, 0.05); }}
         
-        /* 🔥 新增：智慧型專業發光風險提示樣式 */
-        .risk-hint {{
-            background: rgba(248, 113, 113, 0.05);
-            border: 1px solid rgba(248, 113, 113, 0.2);
-            padding: 12px 16px;
-            border-radius: 8px;
-            color: #f87171;
-            font-size: 0.9rem;
-            font-weight: bold;
-            margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            box-shadow: 0 0 15px rgba(248, 113, 113, 0.05);
-        }}
+        /* 🔥 Checkbox 東態操盤工具列樣式 */
+        .filter-bar {{ background: rgba(31, 41, 55, 0.6); border: 1px solid #1f2937; padding: 18px 22px; border-radius: 12px; margin-bottom: 25px; display: flex; flex-direction: column; gap: 12px; backdrop-filter: blur(6px); text-align: left; }}
+        .chk-container {{ display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 0; }}
+        .filter-btn {{ background: linear-gradient(135deg, #a855f7, #ec4899); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 1rem; align-self: flex-start; margin-top: 5px; }}
+        .filter-btn:hover {{ filter: brightness(1.15); transform: scale(1.02); }}
     </style>
     </head><body><div class="box"><a class="btn" href="/agent">← 重新選擇性格</a>
     <div style="font-size:2rem; font-weight:bold; margin-bottom:5px; background:linear-gradient(to right, #60a5fa, #34d399); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">🤖 AI 經紀人精算報告：{style_title}</div>
     <div style="color:#9ca3af; margin-bottom:15px;">下單操作總資金：<span style="color:white; font-weight:bold; font-size:1.1rem;">${funds:,.1f} USD</span></div>
     
-    <!-- 🚨 溫馨風險提示看板注入點 -->
     <div class="risk-hint">
         ⚠️ <b>投資警語：</b> 股票投資有賺有賠，本報告僅供量化策略模擬參考，請自行評估交易風險。
     </div>
+    
+    <!-- 🎛️ 使用者客製化股票清單勾選面板 -->
+    <div class="filter-bar">
+        <span style="font-size: 1rem; color: #9ca3af; font-weight: bold;">🎛️ 請勾選您今天想要投資下單的股票：</span>
+        <div class="chk-container">
+            {checkboxes_html}
+        </div>
+        <button class="filter-btn" onclick="recalculatePortfolio()">更新配置並重新分配金額 ➔</button>
+    </div>
+    
+    <script>
+        function recalculatePortfolio() {{
+            let checkedStocks = [];
+            let checkboxes = document.querySelectorAll(".stock-chk:checked");
+            checkboxes.forEach((cb) => {{
+                checkedStocks.push(cb.value);
+            }});
+            
+            if (checkedStocks.length === 0) {{
+                alert("⚠️ 請至少勾選一檔股票進行配置喔！");
+                return;
+            }}
+            
+            let urlParams = new URLSearchParams(window.location.search);
+            let style = urlParams.get('style') || 'conservative';
+            let funds = urlParams.get('funds') || '100000';
+            let includeStr = checkedStocks.join(",");
+            
+            window.location.href = "/agent/advise?style=" + style + "&funds=" + funds + "&include=" + encodeURIComponent(includeStr);
+        }}
+    </script>
     
     {cards_html}</div></body></html>"""
     
