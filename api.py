@@ -870,11 +870,40 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
         </div>
         """
 
+    # === 💡 替換此段 report_html 模板，完美新增發光風險 Hint ===
     style_title = "⚡ 激進短線衝刺矩陣" if style == "aggressive" else "🛡️ 保守穩健防禦矩陣"
+    
     report_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>AI經紀人精算報告</title>
-    <style>body {{ background:#0b1120; color:#e5e7eb; font-family:-apple-system,sans-serif; padding:40px 20px; }} .box {{ max-width:850px; margin:0 auto; }} .btn {{ display:inline-block; padding:10px 16px; background:#1f2937; color:#93c5fd; border-radius:8px; text-decoration:none; margin-bottom:20px; font-weight:bold; border:1px solid #374151; }}</style>
+    <style>
+        body {{ background:#0b1120; color:#e5e7eb; font-family:-apple-system,sans-serif; padding:40px 20px; }} 
+        .box {{ max-width:850px; margin:0 auto; }} 
+        .btn {{ display:inline-block; padding:10px 16px; background:#1f2937; color:#93c5fd; border-radius:8px; text-decoration:none; margin-bottom:20px; font-weight:bold; border:1px solid #374151; }}
+        
+        /* 🔥 新增：智慧型專業發光風險提示樣式 */
+        .risk-hint {{
+            background: rgba(248, 113, 113, 0.05);
+            border: 1px solid rgba(248, 113, 113, 0.2);
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: #f87171;
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 0 15px rgba(248, 113, 113, 0.05);
+        }}
+    </style>
     </head><body><div class="box"><a class="btn" href="/agent">← 重新選擇性格</a>
     <div style="font-size:2rem; font-weight:bold; margin-bottom:5px; background:linear-gradient(to right, #60a5fa, #34d399); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">🤖 AI 經紀人精算報告：{style_title}</div>
-    <div style="color:#9ca3af; margin-bottom:25px;">下單操作總資金：<span style="color:white; font-weight:bold; font-size:1.1rem;">${funds:,.1f} USD</span></div>
+    <div style="color:#9ca3af; margin-bottom:15px;">下單操作總資金：<span style="color:white; font-weight:bold; font-size:1.1rem;">${funds:,.1f} USD</span></div>
+    
+    <!-- 🚨 溫馨風險提示看板注入點 -->
+    <div class="risk-hint">
+        ⚠️ <b>投資警語：</b> 股票投資有賺有賠，本報告僅供量化策略模擬參考，請自行評估交易風險。
+    </div>
+    
     {cards_html}</div></body></html>"""
+    
     return HTMLResponse(content=report_html)
