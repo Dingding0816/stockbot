@@ -765,10 +765,6 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
     from config.loader import load_stock_config
     try: stock_config = load_stock_config()
     except Exception: stock_config = {}
-
-    STATIC_BETA_MAP = {
-        "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18, "AMAT": 1.62, "BAND": 1.30
-    }
     
     candidates = []
     for sym in stock_config.keys():
@@ -777,37 +773,61 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
             res = run_prediction(symbol=sym, return_dict=True)
             score = float(res.get("predicted_score", 0.0))
             price = float(res.get("current_price", 100.0))
+            
             if score > 0:
+                # 🛡️ 智慧動態防線：優先看預測快取，沒有的話就透過防阻擋 session 向 yfinance 抓取最新即時 Beta
+                beta_val = 1.50  # 設一個預設的穩健值作為萬一斷訊時的保底
+                if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
+                    beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
+                else:
+                    try:
+                        ticker = yf.Ticker(sym, session=session)
+                        fetched_beta = ticker.info.get('beta')
+                        if fetched_beta is not None:
+                            beta_val = float(fetched_beta)
+                            if sym not in PREDICTION_CACHE: PREDICTION_CACHE[sym] = {}
+                            PREDICTION_CACHE[sym]["beta_cached"] = str(round(beta_val, 2))
+                    except Exception:
+                        pass # 萬一 yfinance 短暫異常，直接走 1.5 預設值，保證網頁絕不卡死
+
                 candidates.append({
-                    "sym": sym, "score": score, "price": price, "beta": STATIC_BETA_MAP.get(sym, 1.5),
+                    "sym": sym, "score": score, "price": price, "beta": beta_val,
                     "b1": float(res.get("best_buy_5m", price * 0.99)),
                     "p2": float(res.get("true_low15", price * 0.985)),
                     "p3": float(res.get("true_low_full", price * 0.97))
                 })
         except Exception: continue
 
+    # 💡 萬一全盤皆墨（例如週末剛開機無快取），自動根據配置檔目前有的前 3 隻當作展示保底，絕不寫死！
     if len(candidates) == 0:
-        for sym in ["AMAT", "META", "MU"]:
+        backup_symbols = list(stock_config.keys())[:3] if stock_config else ["AMAT", "META", "MU"]
+        for s in backup_symbols:
+            s_upper = s.upper()
             candidates.append({
-                "sym": sym, "score": 0.5, "price": 150.0, "beta": STATIC_BETA_MAP.get(sym, 1.5),
+                "sym": s_upper, "score": 0.5, "price": 150.0, "beta": 1.50,
                 "b1": 148.5, "p2": 147.0, "p3": 145.0
             })
 
-    # 💡 雙流派選股核心分流
+    # === 💡 複合量化精算模型分流：AI 分數 × 動態抓取的即時 Beta ===
     if style == "aggressive":
-        # 激進型：依 Beta 從高到低排序，選前 3 名
-        candidates = sorted(candidates, key=lambda x: x["beta"], reverse=True)[:3]
-        # 數學權重：與 Beta 成正比 (Beta 越高，分越多)
-        weight_sum = sum([x["beta"] for x in candidates])
-        for x in candidates: x["weight"] = x["beta"] / weight_sum
+        # 【激進短線派】：動態計算每一隻新股票的複合分數
+        for x in candidates:
+            x["combo_score"] = x["score"] * x["beta"]
+        
+        candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
+        combo_sum = sum([x["combo_score"] for x in candidates])
+        for x in candidates: x["weight"] = x["combo_score"] / combo_sum
     else:
-        # 保守型：依 Beta 從低到高排序，選前 3 名
-        candidates = sorted(candidates, key=lambda x: x["beta"])[:3]
-        # 數學權重：風險平價 (Inverse-Beta，Beta 越低，分越多)
-        inv_sum = sum([1.0 / x["beta"] for x in candidates])
-        for x in candidates: x["weight"] = (1.0 / x["beta"]) / inv_sum
+        # 【保守穩健派】：動態計算每一隻新股票的穩定分數
+        for x in candidates:
+            x["combo_score"] = x["score"] / x["beta"]
+            
+        candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
+        combo_sum = sum([x["combo_score"] for x in candidates])
+        for x in candidates: x["weight"] = x["combo_score"] / combo_sum
 
     cards_html = ""
+
     for item in candidates:
         allocated = funds * item["weight"]
         f1, f2, f3 = allocated * 0.3, allocated * 0.4, allocated * 0.3
