@@ -699,6 +699,44 @@ def health_check():
     return {"status": "ok"}
 
 # =========================================================================
+# 🔄 [全新擴充：自動化排程端點] - 供 Render Cron 定時主動刷新全站 Beta 快取
+# =========================================================================
+@app.get("/tasks/refresh-beta-cache")
+def refresh_beta_cache_task():
+    from config.loader import load_stock_config
+    try:
+        stock_config = load_stock_config()
+    except Exception as e:
+        return {"status": "error", "reason": f"配置檔載入失敗: {e}"}
+        
+    updated_stocks = []
+    for sym in stock_config.keys():
+        sym = sym.upper()
+        try:
+            # 透過防阻擋 session 直連 yfinance 抓取最新 Beta
+            ticker = yf.Ticker(sym, session=session)
+            fetched_beta = ticker.info.get('beta')
+            if fetched_beta is not None:
+                beta_text = str(round(float(fetched_beta), 2))
+                
+                # 寫入全域預測快取記憶體
+                if sym not in PREDICTION_CACHE: 
+                    PREDICTION_CACHE[sym] = {}
+                PREDICTION_CACHE[sym]["beta_cached"] = beta_text
+                updated_stocks.append(sym)
+                print(f"🚀 [Task 成功] 已自動背景刷新 {sym} 歷史 Beta 值: {beta_text}")
+                time.sleep(0.5) # 溫柔爬蟲，每隻股票間隔 0.5 秒，防止被 Yahoo 盯上
+        except Exception as e:
+            print(f"❌ [Task 失敗] 自動刷新 {sym} 失敗: {e}")
+            continue
+            
+    return {
+        "status": "success", 
+        "msg": f"已完成 {len(updated_stocks)} 檔股票的 Beta 快取預載！", 
+        "updated_list": updated_stocks
+    }
+
+# =========================================================================
 # 🤖 [AI 經紀人系統擴充] - 獨立性格選擇網頁與雙流派動態資產精算
 # =========================================================================
 
