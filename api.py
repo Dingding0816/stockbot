@@ -771,63 +771,79 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
     if include and include.strip():
         include_list = [x.strip().upper() for x in include.split(",") if x.strip()]
     
+    # === 💡 [Part 1 滿血復活修正版]：動態全方位撈取最新即時真實價格與 Beta ===
     candidates = []
     for sym in stock_config.keys():
         sym = sym.upper()
         
-        # 💡 若使用者已經有自訂勾選結果，只要目前這檔股票不在使用者要的清單內，直接全自動跳過！
-        if len(include_list) > 0 and sym not in include_list:
+        # 💡 如果使用者有手動自訂勾選，非清單內的直接跳過
+        if include_list and sym not in include_list:
             continue
             
         try:
             res = run_prediction(symbol=sym, return_dict=True)
             score = float(res.get("predicted_score", 0.0))
-            price = float(res.get("current_price", 100.0))
+            price = float(res.get("current_price", 0.0))
             
-            # 若是使用者主動保留/指定的股票，即使今天預測分數小於等於0，也強迫納入權重精算
-            if score > 0 or len(include_list) > 0:
-                beta_val = 1.50
-                if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
-                    beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
-                else:
+            # 🛡️ 智慧動態 Beta 抓取防線 (全自動解鎖真實歷史 Beta)
+            beta_val = 1.50
+            if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
+                beta_val = float(PREDICTION_CACHE[sym]["beta_cached"])
+            else:
+                try:
+                    ticker = yf.Ticker(sym, session=session)
+                    fetched_beta = ticker.info.get('beta')
+                    if fetched_beta is not None:
+                        beta_val = float(fetched_beta)
+                        if sym not in PREDICTION_CACHE: PREDICTION_CACHE[sym] = {}
+                        PREDICTION_CACHE[sym]["beta_cached"] = str(round(beta_val, 2))
+                except Exception: pass
+
+            # 💡 核心優化：只要模型有基本價格，或者用戶有主動勾選，就直接抓取真實數據放行！
+            if price > 1.0 or (include_list and sym in include_list):
+                # 如果現價不存在，去 yfinance 補抓一個當下現價作為保底，拒絕死鎖在 150 元
+                if price <= 1.0:
                     try:
-                        ticker = yf.Ticker(sym, session=session)
-                        fetched_beta = ticker.info.get('beta')
-                        if fetched_beta is not None:
-                            beta_val = float(fetched_beta)
-                            if sym not in PREDICTION_CACHE: PREDICTION_CACHE[sym] = {}
-                            PREDICTION_CACHE[sym]["beta_cached"] = str(round(beta_val, 2))
-                    except Exception: pass
+                        tk_price = yf.Ticker(sym, session=session)
+                        price = float(tk_price.history(period="1d", session=session)['Close'].iloc[-1])
+                    except Exception:
+                        price = 100.0
 
                 candidates.append({
-                    "sym": sym, "score": max(score, 0.1), "price": price, "beta": beta_val,
-                    "b1": float(res.get("best_buy_5m", price * 0.99)),
+                    "sym": sym, 
+                    "score": score if score > 0 else 0.5, 
+                    "price": price, 
+                    "beta": beta_val,
+                    "b1": float(res.get("best_buy_5m", price)),
                     "p2": float(res.get("true_low15", price * 0.985)),
                     "p3": float(res.get("true_low_full", price * 0.97))
                 })
         except Exception: continue
 
+    # 💡 最終防空機制：只有在完全聯外斷網、毫無 candidates 時才啟動極限保底
     if len(candidates) == 0:
-        backup_symbols = include_list if len(include_list) > 0 else (list(stock_config.keys())[:3] if stock_config else ["AMAT", "META", "MU"])
+        backup_symbols = include_list if include_list else (list(stock_config.keys())[:3] if stock_config else ["AMAT", "META", "MU"])
         for s in backup_symbols:
             s_upper = s.upper()
             candidates.append({
-                "sym": s_upper, "score": 0.5, "price": 150.0, "beta": 1.50,
-                "b1": 148.5, "p2": 147.0, "p3": 145.0
+                "sym": s_upper, "score": 0.5, "price": 100.0, "beta": 1.50,
+                "b1": 100.0, "p2": 98.5, "p3": 97.0
             })
 
-    # === 💡 2. 雙流派複合量化權重計算 (若使用者「沒有」指定清單，才由系統篩選推薦前3名) ===
+    # === 💡 複合量化精算模型分流：使用真實即時 Beta 重新精算權重 ===
     if style == "aggressive":
+        # ⚡ 激進派：AI預測分數 × 真實即時 Beta (真實權重洗牌)
         for x in candidates:
             x["combo_score"] = x["score"] * x["beta"]
-        if len(include_list) == 0:
+        if not include_list:
             candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
         combo_sum = sum([x["combo_score"] for x in candidates])
         for x in candidates: x["weight"] = x["combo_score"] / combo_sum
     else:
+        # 🛡️ 保守派：AI預測分數 / 真實即時 Beta (Inverse-Beta 風險平價分配)
         for x in candidates:
             x["combo_score"] = x["score"] / x["beta"]
-        if len(include_list) == 0:
+        if not include_list:
             candidates = sorted(candidates, key=lambda x: x["combo_score"], reverse=True)[:3]
         combo_sum = sum([x["combo_score"] for x in candidates])
         for x in candidates: x["weight"] = x["combo_score"] / combo_sum
