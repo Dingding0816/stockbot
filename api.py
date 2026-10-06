@@ -831,9 +831,18 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
     for item in candidates:
         allocated = funds * item["weight"]
         f1, f2, f3 = allocated * 0.3, allocated * 0.4, allocated * 0.3
-        s1 = max(int(f1 / item["b1"]), 1)
-        s2 = max(int(f2 / item["p2"]), 1)
-        s3 = max(int(f3 / item["p3"]), 1)
+        
+        # 🛡️ 操盤手安全防線：拒絕開盤接刀！
+        # 第一批直接強迫從預估現價往下推 1.5% 避開開盤暴跌，二、三批順勢拉開網格差
+        base_start_price = item["b1"] if item["b1"] > 0 else item["price"]
+        
+        buy_price_1 = base_start_price * 0.985  # 避開第一波衝高，往下安全試倉 1.5%
+        buy_price_2 = base_start_price * 0.960  # 短線大拉回，拉開 4.0%
+        buy_price_3 = base_start_price * 0.935  # 恐慌超跌抄底，拉開 6.5%
+        
+        s1 = max(int(f1 / buy_price_1), 1)
+        s2 = max(int(f2 / buy_price_2), 1)
+        s3 = max(int(f3 / buy_price_3), 1)
 
         cards_html += f"""
         <div style="background:rgba(31,41,55,0.4); border:1px solid #1f2937; border-radius:14px; padding:20px; margin-bottom:15px;">
@@ -843,18 +852,18 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0):
             </div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; font-size:0.9rem;">
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <div style="color:#9ca3af;">🎯 第一批 (試倉 30%)</div>
-                    <div style="font-size:1.1rem; margin:4px 0;">價格：<b style="color:#f58220;">${item['b1']:.1f}</b></div>
+                    <div style="color:#9ca3af;">🎯 第一批 (開盤震盪拉回 30%)</div>
+                    <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_1:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s1} 股</div>
                 </div>
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <div style="color:#9ca3af;">⏳ 第二批 (拉回 40%)</div>
-                    <div style="font-size:1.1rem; margin:4px 0;">價格：<b style="color:#f58220;">${item['p2']:.1f}</b></div>
+                    <div style="color:#9ca3af;">⏳ 第二批 (盤中趨勢回檔 40%)</div>
+                    <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_2:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s2} 股</div>
                 </div>
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <div style="color:#9ca3af;">🩸 第三批 (深蹲 30%)</div>
-                    <div style="font-size:1.1rem; margin:4px 0;">價格：<b style="color:#f58220;">${item['p3']:.1f}</b></div>
+                    <div style="color:#9ca3af;">🩸 第三批 (崩盤恐慌抄底 30%)</div>
+                    <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_3:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s3} 股</div>
                 </div>
             </div>
