@@ -294,7 +294,7 @@ def volume_chart(symbol: str):
     return {"error": "圖片生成完畢，但磁碟找不到該檔案"}
 
 # =========================================================================
-# 📊 [第二段 - 2B - Part 1] 全新量化監控矩陣路由 (/matrix) - 快取防線與動能精算
+# 📊 [第二段 - 2B] 全新量化監控矩陣路由 (/matrix) - 排序、篩選與動能精算升級版
 # =========================================================================
 MATRIX_HTML_CACHE = {"content": None, "last_cached_time": 0}
 
@@ -317,14 +317,12 @@ def quant_matrix_page():
     mode_text = "⚡ 盤中 15M 極速即時監控模式" if is_market_open else "🗓️ 盤前/盤後 1D 長週期波段模式"
 
     # 🔥 [記憶體快取核心防線] 
-    # 如果是週末或非開盤時間，且本地已經有算好的快取，直接一秒回傳，徹底阻斷 Render CPU 爆滿卡死！
     current_time = time.time()
     if not is_market_open and MATRIX_HTML_CACHE["content"] is not None:
         if current_time - MATRIX_HTML_CACHE["last_cached_time"] < 600:
             print("🧘 [雷達矩陣快取盾] 非開盤期間，直接秒傳記憶體雷達網頁，100% 阻斷超時！")
             return HTMLResponse(content=MATRIX_HTML_CACHE["content"])
 
-    matrix_rows_html = ""
     try:
         stock_config = load_stock_config()
     except Exception as e:
@@ -333,6 +331,9 @@ def quant_matrix_page():
     STATIC_BETA_MAP = {
         "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18, "AMAT": 1.62, "CRWD": 1.20, "PANW": 0.93, "NET": 1.56
     }
+    
+    # 用來收集所有股票數據，便於後續在後端先進行 1~6 情境排序
+    all_matrix_data = []
     
     for sym in stock_config.keys():
         sym = sym.upper()
@@ -418,57 +419,168 @@ def quant_matrix_page():
         vol_trend = "📈 上漲 (量增)" if vol_change >= 0 else "📉 下跌 (量縮)"
 
         # =========================================================================
-        # 📊 [2B - Part 2] 極簡無斷層版：量化情境分類與表格字串閉合 (接續 Part 1 迴圈內)
+        # 📊 量化情境分類與排序索引映射
         # =========================================================================
         row_class = "row-normal"
+        scen_idx = 5  # 預設為情境 5
+        
         if final_beta > 1.5:
             if vol_change >= 0 and price_score > 0:
-                scen_num, row_class = "情境 1 (極度過熱)", "row-warn"
+                scen_idx, scen_num, row_class = 1, "情境 1 (極度過熱)", "row-warn"
                 status = "<b>💥 價格瘋狂拉抬！</b>" if is_market_open else "易遭隔日沖減碼修正"
                 buy_strat = "<b>🚫 不要追高！</b>" if is_market_open else "開盤絕不追高"
                 sell_strat = "<b>💰 分批停利！</b>" if is_market_open else "開盤上漲則分批獲利"
             elif vol_change >= 0 and price_score <= 0:
-                scen_num, row_class = "情境 2 (主力出貨)", "row-danger"
+                scen_idx, scen_num, row_class = 2, "情境 2 (主力出貨)", "row-danger"
                 status = "<b>🚨 價格大跳水！主力逃跑</b>" if is_market_open else "主力高位倒貨恐慌踩踏"
                 buy_strat = "<b>🛑 絕對禁買！</b>" if is_market_open else "嚴禁抄底"
                 sell_strat = "<b>⚡ 立刻砍倉減碼！</b>" if is_market_open else "開盤無條件減碼"
             else:
-                scen_num, row_class = "情境 3 (強勢鎖籌)", "row-success"
+                scen_idx, scen_num, row_class = 3, "情境 3 (強勢鎖籌)", "row-success"
                 status = "<b>🔥 價格無量緩步墊高！</b>" if is_market_open else "籌碼高度鎖定驚天惜售"
                 buy_strat = "<b>🛒 果斷加碼！</b>" if is_market_open else "開盤可逢低適量試倉"
                 sell_strat = "<b>💎 死死抱緊！</b>" if is_market_open else "持股續抱"
         else:
             if vol_change >= 0 and price_score > 0:
-                scen_num, row_class = "情境 4 (健康多頭)", "row-success"
+                scen_idx, scen_num, row_class = 4, "情境 4 (健康多頭)", "row-success"
                 status = "<b>🛡️ 價格穩健向上，資金吸籌</b>" if is_market_open else "穩健型價量齊揚波段起漲"
                 buy_strat = "<b>🛍️ 積極建倉！</b>" if is_market_open else "開盤可積極分批佈局"
                 sell_strat = "<b>🧘 持股續抱！</b>" if is_market_open else "中長線持股續抱"
             elif vol_change < 0 and price_score < 0:
-                scen_num = "情境 5 (無量陰跌)"
+                scen_idx, scen_num, row_class = 5, "情境 5 (無量陰跌)", "row-normal"
                 status = "<b>目前價格沉悶陰跌</b>" if is_market_open else "陰跌退潮期缺乏資金關注"
                 buy_strat = "<b>⏳ 完全觀望！</b>" if is_market_open else "資金保留，持續觀望"
                 sell_strat = "<b>✂️ 直接換股！</b>" if is_market_open else "分批弱勢汰換"
             else:
-                scen_num, row_class = "情境 6 (誘多陷阱)", "row-warn"
+                scen_idx, scen_num, row_class = 6, "情境 6 (誘多陷阱)", "row-warn"
                 status = "<b>🩸 價格無量緩跌，暴跌前兆</b>" if is_market_open else "高敏感無量陰跌殺多起點"
                 buy_strat = "<b>0️⃣ 嚴禁碰這隻！</b>" if is_market_open else "絕對不要左側接刀"
                 sell_strat = "<b>📉 果斷停損！</b>" if is_market_open else "及時停損或換股"
 
+        all_matrix_data.append({
+            "sym": sym, "scen_idx": scen_idx, "scen_num": scen_num, "row_class": row_class,
+            "beta": final_beta, "vol_trend": vol_trend, "price_trend_text": price_trend_text,
+            "status": status, "buy_strat": buy_strat, "sell_strat": sell_strat
+        })
+
+    # 🔄 【核心需求 1】：依據情境 1 ~ 6 進行全自動升序排序
+    all_matrix_data = sorted(all_matrix_data, key=lambda x: x["scen_idx"])
+
+    # 建立表格 HTML 行字串
+    matrix_rows_html = ""
+    for item in all_matrix_data:
         matrix_rows_html += f"""
-        <tr class="{row_class}">
-            <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{sym}" style="color:#60a5fa; text-decoration:none;">📈 {sym}</a></td>
-            <td style="color:#9ca3af; font-size:0.9rem;">{scen_num}</td>
-            <td>{final_beta:.2f}</td>
-            <td>{vol_trend}</td>
-            <td style="font-weight:bold;">{price_trend_text}</td>
-            <td>{status}</td>
-            <td style="color:#34d399;">{buy_strat}</td>
-            <td style="color:#f87171;">{sell_strat}</td>
+        <tr class="{item['row_class']}" data-scen="{item['scen_idx']}">
+            <td style="font-weight:bold; font-size:1.2rem; color:#60a5fa;"><a href="/dashboard/{item['sym']}" style="color:#60a5fa; text-decoration:none;">📈 {item['sym']}</a></td>
+            <td style="color:#9ca3af; font-size:0.9rem; font-weight:bold;">{item['scen_num']}</td>
+            <td>{item['beta']:.2f}</td>
+            <td>{item['vol_trend']}</td>
+            <td style="font-weight:bold;">{item['price_trend_text']}</td>
+            <td>{item['status']}</td>
+            <td style="color:#34d399;">{item['buy_strat']}</td>
+            <td style="color:#f87171;">{item['sell_strat']}</td>
         </tr>
         """
 
-    # 💡 2C UI 結構打包輸出 (此處已成功跳出 for 迴圈，縮排為 4 空格)
-    raw_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title><style>body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }} .container {{ max-width: 1200px; margin: 0 auto; padding: 30px 20px; }} .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }} .title {{ font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }} .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 30px; }} .matrix-table {{ width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }} .matrix-table th {{ background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; }} .matrix-table td {{ padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }} .row-success {{ background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }} .row-warn {{ background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }} .row-danger {{ background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }} .mode-badge {{ display: inline-block; padding: 6px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 20px; color: #93c5fd; font-weight: bold; font-size: 0.9rem; margin-bottom: 16px; }}</style></head><body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a><div class="title">📊 動態動能與風險量化矩陣圖</div><div class="subtitle">即時多股監控雷達 · 網頁每 60 秒全自動刷新 · 當前倒數：<span id="matrix-timer">60</span>秒</div><table class="matrix-table"><thead><tr><th>股票代號</th><th>目前符合情境</th><th>Beta</th><th>成交量趨勢</th><th>目前價格趨勢</th><th>📊 系統判斷結果</th><th>🟢 建議買進</th><th>🔴 建議賣出</th></tr></thead><tbody>{matrix_rows_html}</tbody></table></div><script>let matrixSec = 60; setInterval(() => {{ matrixSec--; if (matrixSec <= 0) {{ window.location.href = window.location.pathname + '?t=' + new Date().getTime(); }} else {{ document.getElementById("matrix-timer").innerText = matrixSec; }} }}, 1000);</script></body></html>"""
+    # 💡 2C UI 結構打包輸出，並整合【核心需求 2：高階篩選器工具列】
+    raw_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>量化監控矩陣雷達</title>
+    <style>
+        body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }} 
+        .container {{ max-width: 1200px; margin: 0 auto; padding: 30px 20px; }} 
+        .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 20px; border: 1px solid #374151; font-weight: bold; }} 
+        .title {{ font-size: 2.2rem; font-weight: 700; margin-bottom: 8px; background: linear-gradient(to right, #93c5fd, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }} 
+        .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }} 
+        
+        /* 🎛️ 篩選器樣式設計 */
+        .filter-panel {{ background: rgba(31, 41, 55, 0.6); border: 1px solid #1f2937; padding: 16px 20px; border-radius: 12px; margin-bottom: 24px; text-align: left; display: flex; align-items: center; gap: 14px; backdrop-filter: blur(6px); }}
+        .filter-label {{ font-size: 1rem; color: #9ca3af; font-weight: bold; }}
+        .filter-select {{ background: #111827; color: #ffffff; border: 1px solid #4b5563; border-radius: 8px; padding: 8px 16px; font-size: 0.95rem; cursor: pointer; outline: none; font-weight: bold; min-width: 220px; transition: border 0.2s; }}
+        .filter-select:focus {{ border-color: #3b82f6; }}
+        
+        .matrix-table {{ width: 100%; border-collapse: collapse; background: rgba(31, 41, 55, 0.4); border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }} 
+        .matrix-table th {{ background: #111827; color: #9ca3af; padding: 14px 16px; text-align: left; font-size: 0.95rem; }} 
+        .matrix-table td {{ padding: 16px; border-bottom: 1px solid #1f2937; font-size: 0.95rem; vertical-align: top; line-height: 1.5; }} 
+        .row-normal {{ background: transparent; }}
+        .row-success {{ background: linear-gradient(90deg, rgba(52, 211, 153, 0.08) 0%, rgba(0,0,0,0) 100%); }} 
+        .row-warn {{ background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(0,0,0,0) 100%); }} 
+        .row-danger {{ background: linear-gradient(90deg, rgba(248, 113, 113, 0.08) 0%, rgba(0,0,0,0) 100%); }} 
+        .mode-badge {{ display: inline-block; padding: 6px 12px; background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; border-radius: 20px; color: #93c5fd; font-weight: bold; font-size: 0.9rem; margin-bottom: 16px; }}
+    </style></head>
+    <body><div class="container"><a class="home-btn" href="/">🏠 回首頁</a>
+    <div class="title">📊 動態動能與風險量化矩陣圖</div>
+    <div class="subtitle">即時多股監控雷達 · 網頁每 60 秒全自動刷新 · 當前倒數：<span id="matrix-timer">60</span>秒</div>
+    
+    <div class="filter-panel">
+        <span class="filter-label">🎛️ 篩選目前符合情境：</span>
+        <select id="scenFilter" class="filter-select" onchange="filterMatrixRows()">
+            <option value="all">🌐 顯示全部股票 (全功能對照)</option>
+            <option value="1">🔥 情境 1 (極度過熱)</option>
+            <option value="2">🚨 情境 2 (主力出貨)</option>
+            <option value="3">💎 情境 3 (強勢鎖籌)</option>
+            <option value="4">🛡️ 情境 4 (健康多頭)</option>
+            <option value="5">⏳ 情境 5 (無量陰跌)</option>
+            <option value="6">🩸 情境 6 (誘多陷阱)</option>
+        </select>
+    </div>
+
+    <table class="matrix-table">
+        <thead>
+            <tr>
+                <th>股票代號</th>
+                <th>目前符合情境</th>
+                <th>Beta</th>
+                <th>成交量趨勢</th>
+                <th>目前價格趨勢</th>
+                <th>📊 系統判斷結果</th>
+                <th>🟢 建議買進</th>
+                <th>🔴 建議賣出</th>
+            </tr>
+        </thead>
+        <tbody id="matrix-tbody">
+            {matrix_rows_html}
+        </tbody>
+    </table></div>
+    
+    <script>
+        // 🔄 倒數計時與自動刷新 (保留篩選狀態)
+        let matrixSec = 60; 
+        setInterval(() => {{ 
+            matrixSec--; 
+            if (matrixSec <= 0) {{ 
+                // 刷新時把當前篩選狀態帶到網址中，防止網頁刷新後篩選跑掉
+                let currentFilter = document.getElementById("scenFilter").value;
+                window.location.href = window.location.pathname + '?filter=' + currentFilter + '&t=' + new Date().getTime(); 
+            }} else {{ 
+                document.getElementById("matrix-timer").innerText = matrixSec; 
+            }} 
+        }}, 1000);
+
+        // 🎛️ 前端即時毫秒級篩選器函數
+        function filterMatrixRows() {{
+            let selectedVal = document.getElementById("scenFilter").value;
+            let rows = document.querySelectorAll("#matrix-tbody tr");
+            
+            rows.forEach((row) => {{
+                let rowScen = row.getAttribute("data-scen");
+                if (selectedVal === "all" || rowScen === selectedVal) {{
+                    row.style.display = ""; // 顯示
+                }} else {{
+                    row.style.display = "none"; // 隱藏
+                }}
+            }});
+        }}
+
+        // 📥 網頁載入時自動還原上一次的篩選狀態
+        window.onload = function() {{
+            let urlParams = new URLSearchParams(window.location.search);
+            let savedFilter = urlParams.get('filter');
+            if (savedFilter) {{
+                document.getElementById("scenFilter").value = savedFilter;
+                filterMatrixRows();
+            }}
+        }};
+    </script>
+    </body></html>"""
     
     final_html = raw_html.replace('<div class="title">📊 動態動能與風險量化矩陣圖</div>', f'<div class="title">📊 動態動能與風險量化矩陣圖</div>\n<div class="mode-badge">{mode_text}</div>')
     
