@@ -67,3 +67,10 @@ PANW:
   refresh_interval: 60
   display_name: Palo Alto Networks
   category: "cybersecurity"    # 修改分類：AI 網路資安
+
+NET:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: Cloudflare Inc
+  category: "cybersecurity"    # 分類：AI 網路情報資安
