@@ -888,17 +888,19 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
 
     cards_html = ""
 
-    # === 📥 請完全覆蓋這一段 for 迴圈區塊 ===
+    # === 📥 請完整覆蓋這一段 for 迴圈區塊 ===
     for item in candidates:
         allocated = funds * item["weight"]
         
-        # 🟢 【全新修改：依您的需求將權重調整為 50% / 30% / 20% 操盤手重兵攻勢】
+        #  Allocations: 50% / 30% / 20% 操盤手重兵攻勢
         f1, f2, f3 = allocated * 0.50, allocated * 0.30, allocated * 0.20
         
         base_start_price = item["b1"] if item["b1"] > 0 else item["price"]
-        buy_price_1 = base_start_price * 0.985
-        buy_price_2 = base_start_price * 0.960
-        buy_price_3 = base_start_price * 0.935
+        
+        # 📈 價格策略優化：調高第一批掛單價，避免因設定太低而買不到
+        buy_price_1 = base_start_price * 0.997  # 第一批：微幅拉回 -0.3%（近乎現價，極易成交卡位）
+        buy_price_2 = base_start_price * 0.975  # 第二批：盤中正常回檔 -2.5%
+        buy_price_3 = base_start_price * 0.950  # 第三批：深度恐慌修正 -5.0%
         
         s1 = max(int(f1 / buy_price_1), 1)
         s2 = max(int(f2 / buy_price_2), 1)
@@ -912,20 +914,17 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
             </div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; font-size:0.9rem;">
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <!-- 💡 同步修改文字標籤為 50% -->
-                    <div style="color:#9ca3af;">🎯 第一批 (開盤震盪拉回 50%)</div>
+                    <div style="color:#9ca3af;">🎯 第一批 (開盤微幅拉回 50% - 易成交卡位)</div>
                     <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_1:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s1} 股</div>
                 </div>
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <!-- 💡 同步修改文字標籤為 30% -->
                     <div style="color:#9ca3af;">⏳ 第二批 (盤中趨勢回檔 30%)</div>
                     <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_2:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s2} 股</div>
                 </div>
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <!-- 💡 同步修改文字標籤為 20% -->
-                    <div style="color:#9ca3af;">🩸 第三批 (崩盤恐慌抄底 20%)</div>
+                    <div style="color:#9ca3af;">🩸 第三批 (盤中深度修正 20%)</div>
                     <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_3:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s3} 股</div>
                 </div>
