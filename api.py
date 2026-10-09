@@ -888,28 +888,75 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
 
     cards_html = ""
 
-    # === 📥 請完整覆蓋這一段 for 迴圈區塊 ===
+    # === 📥 請完全覆蓋這一段 for 迴圈區塊（多空自適應 ATR 機動調整版） ===
     for item in candidates:
         allocated = funds * item["weight"]
         
-        #  Allocations: 50% / 30% / 20% 操盤手重兵攻勢
+        # ⚖️ 部位配比：50% / 30% / 20% 操盤手重兵攻勢
         f1, f2, f3 = allocated * 0.50, allocated * 0.30, allocated * 0.20
         
         base_start_price = item["b1"] if item["b1"] > 0 else item["price"]
         
-        # 📈 價格策略優化：調高第一批掛單價，避免因設定太低而買不到
-        buy_price_1 = base_start_price * 0.997  # 第一批：微幅拉回 -0.3%（近乎現價，極易成交卡位）
-        buy_price_2 = base_start_price * 0.975  # 第二批：盤中正常回檔 -2.5%
-        buy_price_3 = base_start_price * 0.950  # 第三批：深度恐慌修正 -5.0%
+        # 📈 【智慧 ATR 波動度自動調節核心機制】
+        # 預設保底折數比例（以防萬一 yfinance 連外超時失敗時作為保底）
+        pct_2 = 0.025  # 0.4倍單日波幅保底
+        pct_3 = 0.050  # 0.8倍單日波幅保底
         
+        try:
+            # 全自動向 yfinance 抓取該個股過去 20 天的日 K 線進行波動率動態自我學習
+            hist_20d = yf.download(item['sym'], period="20d", interval="1d", progress=False, session=session, threads=False, timeout=3)
+            if not hist_20d.empty and len(hist_20d) >= 2:
+                highs = hist_20d['High'].values
+                lows = hist_20d['Low'].values
+                closes = hist_20d['Close'].values
+                
+                # 排除單日資料可能產生的維度異常降維
+                if highs.ndim > 1: highs = highs.flatten()
+                if lows.ndim > 1: lows = lows.flatten()
+                if closes.ndim > 1: closes = closes.flatten()
+                
+                # 計算每日的真實波動率百分比 (當日最高 - 當日最低) / 當日收盤
+                daily_ranges = (highs - lows) / closes
+                avg_daily_volatility = float(np.mean(daily_ranges))  # 過去 20 天平均單日總波動率
+                
+                # 根據歷史震盪波幅機動調配權重
+                pct_2 = max(min(avg_daily_volatility * 0.40, 0.04), 0.008)  # 第二批：動態控制在 0.8% ~ 4.0% 之間
+                pct_3 = max(min(avg_daily_volatility * 0.80, 0.08), 0.015)  # 第三批：動態控制在 1.5% ~ 8.0% 之間
+                
+                print(f"🤖 [動態學習成功] {item['sym']} 歷史20日平均波幅: {avg_daily_volatility*100:.2f}%, 第二批波幅比: {pct_2*100:.2f}%, 第三批: {pct_3*100:.2f}%")
+        except Exception as e:
+            print(f"⚠️ {item['sym']} 動態波幅精算異常，將啟用固定百分比保底: {e}")
+
+        # 🎛️ 【多空自適應分流核心開關】：使用您指定的黃金中間值 0.675 進行動態掛單方向判定
+        # 第一批掛單無論多空，皆採用原先設計之最貼近現價 (-0.3%) 策略，確保開盤即秒成交基本倉
+        buy_price_1 = base_start_price * 0.997  
+        
+        if item["score"] >= 0.675:
+            # ⚡ 啟動：【勢如破竹、多頭突破追價策略】 ➔ 第二、三批資金改往上掛單追買！
+            buy_price_2 = base_start_price * (1.0 + pct_2)  # 第二批：往上突破 0.4 倍 ATR 追買（30% 資金）
+            buy_price_3 = base_start_price * (1.0 + pct_3)  # 第三批：往上多頭鈍化 0.8 倍 ATR 強勢加碼（20% 資金）
+            
+            mode_label_2 = f"🚀 第二批 (動態順勢追買 +{pct_2*100:.1f}%)"
+            mode_label_3 = f"🔥 第三批 (強勢多頭加碼 +{pct_3*100:.1f}%)"
+            tech_badge_color = "#f472b6" # 順勢突破粉紅發光框
+        else:
+            # 🛡️ 啟動：【常態洗盤、金字塔拉回低吸策略】 ➔ 第二、三批資金維持往下掛單打折！
+            buy_price_2 = base_start_price * (1.0 - pct_2)  # 第二批：盤中拉回 0.4 倍 ATR 低吸（30% 資金）
+            buy_price_3 = base_start_price * (1.0 - pct_3)  # 第三批：恐慌修正 0.8 倍 ATR 抄底（20% 資金）
+            
+            mode_label_2 = f"⏳ 第二批 (歷史走勢機動拉回 -{pct_2*100:.1f}%)"
+            mode_label_3 = f"🩸 第三批 (歷史走勢動態抄底 -{pct_3*100:.1f}%)"
+            tech_badge_color = "#34d399" # 穩健低吸綠色安全框
+            
         s1 = max(int(f1 / buy_price_1), 1)
         s2 = max(int(f2 / buy_price_2), 1)
         s3 = max(int(f3 / buy_price_3), 1)
 
         cards_html += f"""
-        <div style="background:rgba(31,41,55,0.4); border:1px solid #1f2937; border-radius:14px; padding:20px; margin-bottom:15px;">
+        <div style="background:rgba(31,41,55,0.4); border:1px solid #1f2937; border-radius:14px; padding:20px; margin-bottom:15px; border-top: 4px solid {tech_badge_color};">
             <div style="display:flex; justify-content:space-between; border-bottom:1px solid #374151; padding-bottom:10px; margin-bottom:12px;">
                 <span style="font-size:1.3rem; font-weight:bold; color:#60a5fa;">📈 {item['sym']} (Beta: {item['beta']:.2f})</span>
+                <span style="color:{tech_badge_color}; font-weight:bold; background:rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-size:0.85rem; margin-right:auto; margin-left:10px;">AI 分數: {item['score']:.3f}</span>
                 <span style="color:#34d399; font-weight:bold;">配置金額: ${allocated:,.1f} USD ({item['weight']*100:.1f}%)</span>
             </div>
             <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; font-size:0.9rem;">
@@ -919,12 +966,12 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
                     <div style="color:#34d399; font-weight:bold;">買進：{s1} 股</div>
                 </div>
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <div style="color:#9ca3af;">⏳ 第二批 (盤中趨勢回檔 30%)</div>
+                    <div style="color:#9ca3af;">{mode_label_2}</div>
                     <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_2:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s2} 股</div>
                 </div>
                 <div style="background:rgba(17,24,39,0.5); padding:12px; border-radius:8px; border:1px solid #374151;">
-                    <div style="color:#9ca3af;">🩸 第三批 (盤中深度修正 20%)</div>
+                    <div style="color:#9ca3af;">{mode_label_3}</div>
                     <div style="font-size:1.1rem; margin:4px 0;">掛單價格：<b style="color:#f58220;">${buy_price_3:.1f}</b></div>
                     <div style="color:#34d399; font-weight:bold;">買進：{s3} 股</div>
                 </div>
