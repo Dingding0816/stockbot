@@ -331,7 +331,7 @@ def quant_matrix_page():
         return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
         
     STATIC_BETA_MAP = {
-        "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18, "AMAT": 1.62
+        "MU": 2.22, "SNDK": 3.74, "MXL": 3.94, "STX": 2.09, "META": 1.24, "ATEYY": 1.18, "AMAT": 1.62, "CRWD": 1.20, "PANW": 0.93
     }
     
     for sym in stock_config.keys():
