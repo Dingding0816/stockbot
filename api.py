@@ -33,6 +33,7 @@ CATEGORY_NAMES = {
     "storage": "硬碟與儲存 Storage",
     "software": "雲端軟體與店商平台 Software",
     "semi-equipment": "半導體設備 Semi-equipment",
+    "cybersecurity": "網路資安 Cybersecurity",
     "ai": "AI 與社群媒體 AI Matrix"
 }
 
