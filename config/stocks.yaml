@@ -53,3 +53,17 @@ AMAT:
   refresh_interval: 60
   display_name: Applied Materials
   category: "semi-equipment"   # 新增這行：半導體設備
+
+CRWD:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: CrowdStrike Holdings
+  category: "cybersecurity"    # 修改分類：AI 網路資安
+
+PANW:
+  model_type: tech
+  data_source: finnhub
+  refresh_interval: 60
+  display_name: Palo Alto Networks
+  category: "cybersecurity"    # 修改分類：AI 網路資安
