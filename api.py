@@ -101,7 +101,8 @@ def is_weekend_now() -> bool:
 # 📟 [2026年最新標準：LINE MESSAGING API 官方機器人發送引擎] 
 # =========================================================================
 LINE_ACCESS_TOKEN = "VK2OUm7lcUnjgIhnLElhzimTFuUOyWQ80XaaNVDpDPLOkbTtWxN9wjos8qcSQq9u64BNAY3ktCy4KvdoXZoMHPZUXAOeHLhkDMhOyw+kehYL4G7J7ALBeoi8DOsUL2seKahQttVSupNgeORM28AtXwdB04t89/1O/w1cDnyilFU="
-LINE_USER_ID = "U7b17a87cd8efbd13bf4fa39a1164d586"
+# 🎯 終極修復完成：將原本的空字串，完全替換成下方這串剛剛在 Log 抓到的真金金鑰
+LINE_GROUP_ID = "C1162cbe9ec5fe04c4e64da1c0e19da3e"
 
 # 🧠 記憶體狀態鎖：記錄每隻股票上一次發布的訊號
 LAST_ALERT_STATES = {}
