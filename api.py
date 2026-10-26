@@ -863,6 +863,17 @@ def wave_radar_page():
     from config.loader import load_stock_config
     import pytz
     
+    # 💡 1. 嚴謹紐約時區精算（精準對齊美股夏令 21:30 開盤時間）
+    est = pytz.timezone('US/Eastern')
+    now_est = datetime.now(est)
+    is_market_open = False
+    
+    if now_est.weekday() < 5:
+        start_trade = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
+        end_trade = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
+        if start_trade <= now_est <= end_trade:
+            is_market_open = True
+    
     try:
         stock_config = load_stock_config()
     except Exception as e:
@@ -935,7 +946,7 @@ def wave_radar_page():
             timing_date = "🔥 現正處於噴發窗口期 (隨時發動)"
 
         # 🔴 情境二：大跌防禦 ＆ 🟡 情境三：常態蓄勢盤整保護牆 - Part 6
-        elif ai_score <= -0.20 or (dir_30m < -0.3 and dir_30m != 0.0):
+        elif ai_score <= -0.20 or (dir_30m < -0.3 and is_market_open):
             status_badge = "🚨 警惕即將大跌/主力倒貨"
             badge_color = "#f87171" 
             card_border = "#ef4444" 
