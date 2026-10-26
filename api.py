@@ -760,6 +760,154 @@ def home():
 </html>
 """
     return HTMLResponse(content=html)
+# =========================================================================
+# 🎯 [全新擴充] 獨立波段策略雷達路由 (/wave_radar) - 結合底層 7 大量化特徵
+# =========================================================================
+
+@app.get("/wave_radar", response_class=HTMLResponse)
+def wave_radar_page():
+    from config.loader import load_stock_config
+    import pytz
+    
+    try:
+        stock_config = load_stock_config()
+    except Exception as e:
+        return HTMLResponse(content=f"<h3>配置檔案載入失敗: {e}</h3>", status_code=500)
+        
+    today_str = datetime.now(pytz.timezone("Asia/Taipei")).strftime("%Y-%m-%d")
+    wave_cards_html = ""
+    
+    # 逐一撈取股票進行波段精算
+    for sym in stock_config.keys():
+        sym = sym.upper()
+        try:
+            # 1. 滿血調用您 run_daily_new_17.py 的所有底層即時數據
+            res = run_prediction(symbol=sym, return_dict=True)
+            
+            current_price = float(res.get("current_price", 100.0))
+            ai_score = float(res.get("predicted_score", 0.0))
+            
+            # 從底層提取隱藏的關鍵特徵
+            weights_dict = res.get("weights", {})
+            atr_factor = float(weights_dict.get("atr", 0.02))  # 提取 ATR 比例
+            dir_30m = float(weights_dict.get("dir30", 0.0))    # 30分鐘內力道
+            gap_pre = float(weights_dict.get("gap", 0.0))      # 跳空幅度
+            
+        except Exception as e:
+            print(f"❌ 波段雷達讀取 {sym} 底層特徵失敗: {e}")
+            continue
+
+        # 🎯 2. 波段量化擇時演算法核心
+        status_badge = ""
+        badge_color = ""
+        action_text = ""
+        target_price = 0.0
+        timing_date = ""
+        card_border = "#374151"
+        
+        # 保底機制：若特徵抓取異常則給予合理常態值
+        if atr_factor <= 0: atr_factor = 0.025 
+
+        # 🟢 情境一：推算大漲行情 (AI 分數強勢 + 盤中出現資金單向連續掃貨)
+        if ai_score >= 0.62 or (dir_30m > 0.3 and gap_pre > 0.005):
+            status_badge = "🚀 即將/已啟動大漲波段 (強勢突破)"
+            badge_color = "#f472b6" # 突破粉
+            card_border = "#ec4899"
+            
+            # 追價買點設定：現價加上 0.6 倍的 ATR 波動幅，作為「確認突破追進價」
+            target_price = current_price * (1.0 + (atr_factor * 0.6))
+            action_text = f"目前主力資金強勢鎖籌。<strong>建議追價買進價為 ${target_price:.2f}</strong>（突破前高確認點），切勿盲目猜頂，順勢動能操作為主。"
+            timing_date = "🔥 現正處於噴發窗口期 (隨時發動)"
+            
+        # 🔴 情境二：推算大跌行情 (AI 分數低迷 + 盤中資金連續倒貨背離)
+        elif ai_score <= -0.20 or dir_30m < -0.3:
+            status_badge = "🚨 警惕即將大跌/主力倒貨"
+            badge_color = "#f87171" # 恐慌紅
+            card_border = "#ef4444"
+            
+            # 建議買點設定：估算大跌恐慌宣洩點，利用 2.5 倍 ATR 進行左側極限低吸保底
+            target_price = current_price * (1.0 - (atr_factor * 2.5))
+            action_text = f"高位籌碼鬆動。目前絕不可盲目抄底！<strong>黃金防禦建議買點為 ${target_price:.2f}</strong>（恐慌盤築底區）。"
+            
+            # 時間築底推算：美股波段修正一般需要 5-8 個交易日
+            est_date = datetime.now() + timedelta(days=7)
+            if est_date.weekday() == 5: est_date += timedelta(days=2)
+            elif est_date.weekday() == 6: est_date += timedelta(days=1)
+            timing_date = f"⏳ 預估恐慌砸盤築底落點：{est_date.strftime('%Y-%m-%d')} 前後"
+            
+        # 🟡 情境三：常態蓄勢盤整
+        else:
+            status_badge = "⏳ 壓縮蓄勢盤整 (等待方向)"
+            badge_color = "#fbbf24" # 警告黃
+            target_price = current_price * (1.0 - (atr_factor * 1.0))
+            action_text = f"目前量價結構沉悶，資金缺乏共識。建議維持網格交易，<strong>低吸潛伏買點設定在 ${target_price:.2f}</strong>。"
+            timing_date = "🗓️ 靜待方向突破，預計 3-5 天內變盤"
+
+        # 組合卡片 HTML
+        wave_cards_html += f"""
+        <div class="wave-card" style="border-top: 5px solid {card_border};">
+            <div class="card-header">
+                <span class="stock-title">📈 {sym}</span>
+                <span class="status-badge" style="background: {badge_color}20; color: {badge_color}; border: 1px solid {badge_color};">{status_badge}</span>
+                <span class="live-price">當前價: <b>${current_price:.2f}</b></span>
+            </div>
+            <div class="card-body">
+                <div class="metric-box">
+                    <p>💡 AI 綜合動能分數：<span style="color:#60a5fa; font-weight:bold;">{ai_score:.3f}</span></p>
+                    <p>📊 歷史 14D 震盪波幅 (ATR)：<span style="color:#34d399; font-weight:bold;">{atr_factor*100:.2f}%</span></p>
+                    <p>⏱️ 30M 資金掃貨方向力道：<span style="color:#a78bfa; font-weight:bold;">{dir_30m:.2f}</span></p>
+                </div>
+                <div class="strategy-box">
+                    <div class="strat-title">🎯 戰略擇時與操作指引</div>
+                    <p class="strat-text">{action_text}</p>
+                    <div class="timing-badge">📅 關鍵時間窗口：{timing_date}</div>
+                </div>
+            </div>
+        </div>
+        """
+
+    # 輸出極致科技感的暗黑雷達介面
+    html_layout = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>波段戰略核心雷達</title>
+    <style>
+        body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #070a13; color: #e5e7eb; }} 
+        .container {{ max-width: 1000px; margin: 0 auto; padding: 40px 20px; }} 
+        .top-nav {{ display: flex; gap: 12px; margin-bottom: 25px; }}
+        .nav-btn {{ padding: 10px 18px; background: #111827; color: #93c5fd; border-radius: 8px; text-decoration: none; border: 1px solid #1f2937; font-weight: bold; font-size: 0.95rem; }} 
+        .nav-btn:hover {{ background: #1f2937; }}
+        .header-section {{ margin-bottom: 35px; text-align: left; }}
+        .title {{ font-size: 2.4rem; font-weight: 800; background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px; }} 
+        .subtitle {{ font-size: 1.05rem; color: #9ca3af; }} 
+        
+        .wave-card {{ background: rgba(17, 24, 39, 0.7); border: 1px solid #1f2937; border-radius: 14px; padding: 24px; margin-bottom: 20px; backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
+        .card-header {{ display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1f2937; padding-bottom: 14px; margin-bottom: 16px; }}
+        .stock-title {{ font-size: 1.5rem; font-weight: 800; color: #ffffff; }}
+        .status-badge {{ padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; }}
+        .live-price {{ font-size: 1.15rem; color: #9ca3af; }}
+        .live-price b {{ color: #ffffff; }}
+        
+        .card-body {{ display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; }}
+        @media(max-width: 768px) {{ .card-body {{ grid-template-columns: 1fr; }} }}
+        .metric-box {{ background: rgba(7, 10, 19, 0.5); padding: 16px; border-radius: 10px; border: 1px solid #1f2937; }}
+        .metric-box p {{ margin: 8px 0; font-size: 0.95rem; color: #9ca3af; }}
+        
+        .strategy-box {{ background: rgba(30, 41, 59, 0.3); padding: 20px; border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.1); }}
+        .strat-title {{ font-size: 1.1rem; font-weight: bold; color: #ffffff; margin-bottom: 8px; }}
+        .strat-text {{ font-size: 1rem; color: #d1d5db; line-height: 1.6; margin: 0 0 14px 0; }}
+        .timing-badge {{ display: inline-block; padding: 6px 14px; background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 6px; color: #c4b5fd; font-weight: bold; font-size: 0.95rem; }}
+    </style></head>
+    <body><div class="container">
+        <div class="top-nav">
+            <a class="nav-btn" href="/">🏠 回首頁</a>
+            <a class="nav-btn" href="/matrix">📊 監控矩陣</a>
+        </div>
+        <div class="header-section">
+            <div class="title">🎯 矽谷板塊 · 波段戰略核心雷達</div>
+            <div class="subtitle">結合底層 7 大多空量化因子 · 全自動推算中長線變盤落點與極限價格目標</div>
+        </div>
+        {wave_cards_html}
+    </div></body></html>"""
+    
+    return HTMLResponse(content=html_layout)
 
 # -----------------------------
 # 分類頁面：動態路由
