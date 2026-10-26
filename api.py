@@ -1416,36 +1416,41 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
     return HTMLResponse(content=report_html)
 
 # =========================================================================
-# 🎯 [臨時擴充] 全自動 LINE Webhook 監聽器 - 專門用來捕捉 C... 開頭群組 ID
+# 🎯 [終極修復防崩潰版] 全自動 LINE Webhook 監聽器 - 100% 根除 type 錯誤
 # =========================================================================
 @app.post("/callback")
-async def line_webhook_callback(request: requests.Request if not hasattr(FastAPI, 'middleware') else dict):
-    from fastapi import Request
+async def line_webhook_callback(request: Request):
     try:
-        # 1. 解析 LINE 伺服器傳過來的 JSON 數據
-        req = Request(scope=request.scope if hasattr(request, 'scope') else request)
-        body = await req.json()
+        body = await request.json()
         events = body.get("events", [])
         
+        # 如果收到的是 LINE 官方控制台點擊 Verify 的空測試封包，直接放行不解讀
+        if not events:
+            print("📟 [LINE 驗證防線] 偵測到官方 Verify 測試握手，連線安全通暢！")
+            return {"status": "ok"}
+            
         for event in events:
-            # 2. 提取來源結構
-            source = event.get("source", {})
+            # 🛡️ 安全防禦：改用最安全的 dict 嵌套安全抓取法，徹底根除 NameError 與 KeyError
+            source = event.get("source")
+            if not source or not isinstance(source, dict):
+                continue
+                
             source_type = source.get("type")
             
             # 🟢 核心精算：如果訊息來自群組 (Group)，在 Render Log 強制印出金色大 ID
             if source_type == "group":
                 group_id = source.get("groupId")
-                print("\n" + "="*60)
-                print(f"🎯 成功捕捉到美股群組大門！您的 LINE_GROUP_ID 為:\n\n {group_id} \n")
-                print("="*60 + "\n")
+                print("\n" + "🔥"*20)
+                print(f"🎯【成功捕捉到美股群組大門！】\n\n您的 LINE_GROUP_ID 密碼為:\n\n{group_id}\n")
+                print("🔥"*20 + "\n")
                 return {"status": "success", "captured_group_id": group_id}
                 
-            # 🔵 備援：如果訊息來自普通聊天室 (Room)
+            # 🔵 備援：如果訊息來自普通多人聊天室 (Room)
             elif source_type == "room":
                 room_id = source.get("roomId")
                 print(f"ℹ️ 偵測到多人聊天室 ID: {room_id}")
                 
         return {"status": "ok"}
     except Exception as e:
-        print(f"❌ Webhook 解析失敗: {e}")
+        print(f"❌ Webhook 解析失敗，已自動攔截異常: {e}")
         return {"status": "error"}
