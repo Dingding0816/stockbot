@@ -733,6 +733,10 @@ def home():
         <a class="matrix-radar-btn" href="/matrix">
             📊 開盤量化監控矩陣雷達（多股即時對照）➔
         </a>
+        <!-- 🎯 [全新加入] 前往獨立波段策略雷達網頁入口（把這段貼在下方） -->
+        <a class="matrix-radar-btn" href="/wave_radar" style="background: linear-gradient(135deg, #1d4ed8, #701a75); box-shadow: 0 4px 20px rgba(112, 26, 117, 0.5); margin-left: 10px;">
+            🎯 雙向波段變盤預測雷達 ➔
+        </a>
         
         <!-- 🤖 [新加入] 前往獨立 AI 經紀人性格選擇網頁入口 -->
         <a class="matrix-radar-btn" href="/agent" style="background: linear-gradient(135deg, #a855f7, #ec4899); box-shadow: 0 4px 20px rgba(236, 72, 153, 0.4);">
