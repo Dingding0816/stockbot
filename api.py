@@ -814,9 +814,9 @@ def wave_radar_page():
 
         # 🟢 情境一：推算大漲行情 (AI 分數強勢 + 盤中出現資金單向連續掃貨)
         if ai_score >= 0.62 or (dir_30m > 0.3 and gap_pre > 0.005):
-            status_badge = "🚀 即將/已啟動大漲波段 (強勢突破)"
-            badge_color = "#f472b6" # 突破粉
-            card_border = "#ec4899"
+            status_badge = "🚀 即將/已啟動大漲波段 (多頭強勢突破)"
+            badge_color = "#22c55e" # 修正點：改為美股標準亮綠色 (Tailwind Green-500)
+            card_border = "#10b981" # 修正點：卡片邊框同步改為強勢綠 (Emerald-500)
             
             # 追價買點設定：現價加上 0.6 倍的 ATR 波動幅，作為「確認突破追進價」
             target_price = current_price * (1.0 + (atr_factor * 0.6))
