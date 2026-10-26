@@ -1414,3 +1414,38 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
     {cards_html}</div></body></html>"""
     
     return HTMLResponse(content=report_html)
+
+# =========================================================================
+# 🎯 [臨時擴充] 全自動 LINE Webhook 監聽器 - 專門用來捕捉 C... 開頭群組 ID
+# =========================================================================
+@app.post("/callback")
+async def line_webhook_callback(request: requests.Request if not hasattr(FastAPI, 'middleware') else dict):
+    from fastapi import Request
+    try:
+        # 1. 解析 LINE 伺服器傳過來的 JSON 數據
+        req = Request(scope=request.scope if hasattr(request, 'scope') else request)
+        body = await req.json()
+        events = body.get("events", [])
+        
+        for event in events:
+            # 2. 提取來源結構
+            source = event.get("source", {})
+            source_type = source.get("type")
+            
+            # 🟢 核心精算：如果訊息來自群組 (Group)，在 Render Log 強制印出金色大 ID
+            if source_type == "group":
+                group_id = source.get("groupId")
+                print("\n" + "="*60)
+                print(f"🎯 成功捕捉到美股群組大門！您的 LINE_GROUP_ID 為:\n\n {group_id} \n")
+                print("="*60 + "\n")
+                return {"status": "success", "captured_group_id": group_id}
+                
+            # 🔵 備援：如果訊息來自普通聊天室 (Room)
+            elif source_type == "room":
+                room_id = source.get("roomId")
+                print(f"ℹ️ 偵測到多人聊天室 ID: {room_id}")
+                
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"❌ Webhook 解析失敗: {e}")
+        return {"status": "error"}
