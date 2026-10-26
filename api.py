@@ -176,7 +176,7 @@ def predict_symbol(symbol: str):
                 send_line_bot_message(msg) # 呼叫新官方帳號引擎
                 
         # 🔴 狀況 B：偵測到盤中即將大跌 (AI分數低迷 且 排除了未開盤的常態 0 值)
-        elif ai_score <= -0.20 or (dir_30m < -0.3 and dir_30m != 0.0):
+        elif ai_score <= -0.20 or (dir_30m < -0.3 and is_market_open):
             if LAST_ALERT_STATES[sym] != "DOWN": # 狀態改變才發送
                 LAST_ALERT_STATES[sym] = "DOWN"
                 panic_buy = current_price * (1.0 - (atr_factor * 2.5))
@@ -965,7 +965,11 @@ def wave_radar_page():
             card_border = "#f59e0b" 
             target_price = current_price * (1.0 - (atr_factor * 1.0))
             action_text = f"目前量價結構沉悶，資金缺乏共識。建議維持網格交易，<strong>低吸潛伏買點設定在 ${target_price:.2f}</strong>。"
-            timing_date = "🗓️ 靜待方向突破，美股開盤後將自動更新動能天線"
+            # 🎯 修正點：如果是開盤中，顯示實時盤整；非開盤才顯示等待開盤
+            if is_market_open:
+                timing_date = "🗓️ 盤中多空拉鋸，靜待方向突破變盤"
+            else:
+                timing_date = "🗓️ 靜待方向突破，美股開盤後將自動更新動能天線"
 
         # HTML 卡片組裝與變數注入 - Part 7
         wave_cards_html += f"""
