@@ -1416,10 +1416,12 @@ def agent_advise_page(style: str = "conservative", funds: float = 100000.0, incl
     return HTMLResponse(content=report_html)
 
 # =========================================================================
-# 🎯 [終極修復防崩潰版] 全自動 LINE Webhook 監聽器 - 100% 根除 type 錯誤
+# 🎯 [終極修復防禦版] 全自動 LINE Webhook 監聽器 - 完美解決 NameError 崩潰
 # =========================================================================
+from fastapi import Request as FastAPIRequest  # 🛡️ 安全防護：在最外層提早宣告類別
+
 @app.post("/callback")
-async def line_webhook_callback(request: Request):
+async def line_webhook_callback(request: FastAPIRequest): # 已正確綁定全域類別
     try:
         body = await request.json()
         events = body.get("events", [])
@@ -1430,7 +1432,6 @@ async def line_webhook_callback(request: Request):
             return {"status": "ok"}
             
         for event in events:
-            # 🛡️ 安全防禦：改用最安全的 dict 嵌套安全抓取法，徹底根除 NameError 與 KeyError
             source = event.get("source")
             if not source or not isinstance(source, dict):
                 continue
