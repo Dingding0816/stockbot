@@ -137,32 +137,51 @@ def send_line_bot_message(text_message: str):
         print(f"❌ [LINE 連線異常]: {e}")
 
 # -------------------------------------------------------------------------
-# 📈 預測 API 端點（已整合 2026 LINE 官方機器人即時變盤警報天線）
+# 📈 預測 API 端點（已整合 LINE 官方機器人 ＆ 開盤即時分數解鎖防死鎖線）
 # -------------------------------------------------------------------------
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
     sym = symbol.upper()
+    
+    # 💡 提早精算開盤狀態（夏令時間 21:30 - 04:00）
+    import pytz
+    est = pytz.timezone('US/Eastern')
+    now_est = datetime.now(est)
+    is_market_open = False
+    if now_est.weekday() < 4:  # 週一至週四美股
+        start_trade = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
+        end_trade = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
+        if start_trade <= now_est <= end_trade:
+            is_market_open = True
+            
     try:
         # 1. 執行您底層原本的 AI 模型預測
         raw_result = run_prediction(symbol=sym, return_dict=True)
-        cleaned_res = process_prediction_with_cache(sym, raw_result)
         
-        # 2. 提取即時多空核心特徵
+        # 2. 🛡️ 核心防死鎖防線：如果是在開盤期間，強行跳過舊快取，100% 採用即時真實分數！
+        if is_market_open:
+            cleaned_res = raw_result  # 盤中直接放行真實即時流
+        else:
+            cleaned_res = process_prediction_with_cache(sym, raw_result)
+        
+        # 3. 提取即時多空核心特徵（多重變數名相容保底，防止底層變數改名讀不到）
         ai_score = float(cleaned_res.get("predicted_score", 0.0))
         weights_dict = cleaned_res.get("weights", {})
-        dir_30m = float(weights_dict.get("dir30", 0.0))
-        gap_pre = float(weights_dict.get("gap", 0.0))
+        
+        # 相容舊版 dir30 與新版 direction_30m
+        dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.0)))
+        gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
         current_price = float(cleaned_res.get("current_price", 0.0))
-        atr_factor = float(weights_dict.get("atr", 0.025))
+        atr_factor = float(weights_dict.get("atr", weights_dict.get("atr_factor", 0.025)))
         if atr_factor <= 0: atr_factor = 0.025
         
-        # 3. 讀取該股票歷史狀態鎖（若無則預設為常態）
+        # 4. 讀取該股票歷史狀態鎖（若無則預設為常態）
         if sym not in LAST_ALERT_STATES:
             LAST_ALERT_STATES[sym] = "NORMAL"
             
-        # 🧠 4. 盤中變盤真實量化判定邏輯
-        # 🟢 狀況 A：偵測到盤中即將大漲 (AI分數極高 或 30M內資金狂熱掃貨)
-        if ai_score >= 0.62 or (dir_30m > 0.3 and gap_pre > 0.005):
+        # 🧠 5. 盤中變盤真實量化判定邏輯
+        # 🟢 狀況 A：偵測到盤中即將大漲 (AI分數突破 或 30M內資金狂熱掃貨)
+        if ai_score >= 0.55 or (dir_30m > 0.25 and gap_pre > 0.003):
             if LAST_ALERT_STATES[sym] != "UP": # 狀態改變才發送
                 LAST_ALERT_STATES[sym] = "UP"
                 target_buy = current_price * (1.0 + (atr_factor * 0.6))
@@ -173,10 +192,10 @@ def predict_symbol(symbol: str):
                     f"● 當前現價: ${current_price:.2f}\n"
                     f"🎯【操盤對策】: 順勢突破確認。建議追價買進價格為 ${target_buy:.2f}！"
                 )
-                send_line_bot_message(msg) # 呼叫新官方帳號引擎
+                send_line_bot_message(msg)
                 
         # 🔴 狀況 B：偵測到盤中即將大跌 (AI分數低迷 且 排除了未開盤的常態 0 值)
-        elif ai_score <= -0.20 or (dir_30m < -0.3 and is_market_open):
+        elif ai_score <= -0.15 or (dir_30m < -0.25 and is_market_open):
             if LAST_ALERT_STATES[sym] != "DOWN": # 狀態改變才發送
                 LAST_ALERT_STATES[sym] = "DOWN"
                 panic_buy = current_price * (1.0 - (atr_factor * 2.5))
@@ -187,7 +206,7 @@ def predict_symbol(symbol: str):
                     f"● 當前現價: ${current_price:.2f}\n"
                     f"🎯【操盤對策】: 嚴禁盲目接飛刀！黃金防禦建議抄底買點為 ${panic_buy:.2f}。"
                 )
-                send_line_bot_message(msg) # 呼交新官方帳號引擎
+                send_line_bot_message(msg)
                 
         # 🟡 狀況 C：回到蓄勢盤整區 (多空力道退潮，自動解除原本的多空狀態鎖)
         else:
