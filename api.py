@@ -869,7 +869,7 @@ def home():
 """
     return HTMLResponse(content=html)
 # =========================================================================
-# 🎯 [極致升級版] 獨立波段策略雷達路由 (/wave_radar) - Part 1
+# 🎯 [終極縮排校正版] 獨立波段策略雷達路由 (/wave_radar) - 100% 根除 IndentationError
 # =========================================================================
 @app.get("/wave_radar", response_class=HTMLResponse)
 def wave_radar_page():
@@ -895,62 +895,60 @@ def wave_radar_page():
     today_dt = datetime.now(pytz.timezone("Asia/Taipei"))
     wave_cards_html = ""
 
-        # 逐一撈取股票進行波段精算 - Part 2 (智慧代打：30M力道 + 14D ATR 雙解鎖版)
-        for sym in stock_config.keys():
-            sym = sym.upper()
+    # 🛡️ 縮排修正核心：此行前面已經精準調整為「4個空格」，完美對齊 try!
+    for sym in stock_config.keys():
+        sym = sym.upper()
+        try:
+            res = run_prediction(symbol=sym, return_dict=True)
+            current_price = float(res.get("current_price", 100.0))
+            ai_score = float(res.get("predicted_score", 0.0))
+            
+            weights_dict = res.get("weights", {})
+            gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
+            
+            # 🧠 14D ATR 歷史震盪波幅全自動代打精算
+            atr_factor = 0.025  
             try:
-                res = run_prediction(symbol=sym, return_dict=True)
-                current_price = float(res.get("current_price", 100.0))
-                ai_score = float(res.get("predicted_score", 0.0))
-                
-                weights_dict = res.get("weights", {})
-                gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
-                
-                # 🧠 14D ATR 歷史震盪波幅全自動代打精算 (讀取 30 天歷史 K 線)
-                atr_factor = 0.025  # 預設保底 2.5%
-                try:
-                    # 利用我們已經為 Part 3 下載好的 45D 歷史日 K 線（內含滿滿 30 個交易日數據）
-                    hist_atr = yf.download(sym, period="45d", interval="1d", progress=False, session=session, threads=False, timeout=3)
-                    if not hist_atr.empty and len(hist_atr) >= 14:
-                        highs_14d = hist_atr['High'].tail(14).values.flatten()
-                        lows_14d = hist_atr['Low'].tail(14).values.flatten()
-                        closes_14d = hist_atr['Close'].tail(14).values.flatten()
-                        
-                        # 量化精算真實 14 日平均震盪比例
-                        daily_ranges = (highs_14d - lows_14d) / closes_14d
-                        atr_factor = float(np.mean(daily_ranges))
-                        # 限制在合理的常態晶片股波動區間 (1.5% ~ 18% 之間)
-                        atr_factor = max(min(atr_factor, 0.18), 0.015)
-                except Exception as e:
-                    print(f"⚠️ [ATR力道計算異常] {sym} 啟用保底比例: {e}")
-                    atr_factor = float(weights_dict.get("atr", weights_dict.get("atr_factor", 0.035)))
-
-                # 🧠 30M 資金掃貨方向力道全自動精算
-                dir_30m = 0.0
-                if is_market_open:
-                    try:
-                        df_dir = yf.download(sym, period="3d", interval="15m", progress=False, session=session, threads=False, timeout=3)
-                        if not df_dir.empty and len(df_dir) >= 2:
-                            last_2_closes = df_dir['Close'].tail(2).values.flatten()
-                            last_2_opens = df_dir['Open'].tail(2).values.flatten()
-                            
-                            k1_force = (last_2_closes[-1] - last_2_opens[-1]) / last_2_opens[-1]
-                            k2_force = (last_2_closes[-2] - last_2_opens[-2]) / last_2_opens[-2]
-                            
-                            dir_30m = float(k1_force + k2_force) * 100.0
-                            dir_30m = max(min(dir_30m, 1.0), -1.0)
-                    except Exception as e:
-                        dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.05)))
-                else:
-                    dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.02)))
-                
-                # 🛡️ 終極防鎖死：如果剛開盤數據完全沒變動，給予合理的環境微幅隨機震盪
-                if dir_30m == 0.05 and is_market_open:
-                    dir_30m = random.uniform(-0.06, 0.09)
+                hist_atr = yf.download(sym, period="45d", interval="1d", progress=False, session=session, threads=False, timeout=3)
+                if not hist_atr.empty and len(hist_atr) >= 14:
+                    highs_14d = hist_atr['High'].tail(14).values.flatten()
+                    lows_14d = hist_atr['Low'].tail(14).values.flatten()
+                    closes_14d = hist_atr['Close'].tail(14).values.flatten()
                     
+                    daily_ranges = (highs_14d - lows_14d) / closes_14d
+                    atr_factor = float(np.mean(daily_ranges))
+                    atr_factor = max(min(atr_factor, 0.18), 0.015)
             except Exception as e:
-                print(f"❌ 波段雷達讀取 {sym} 底層特徵失敗: {e}")
-                continue
+                print(f"⚠️ [ATR力道計算異常] {sym} 啟用保底比例: {e}")
+                atr_factor = float(weights_dict.get("atr", weights_dict.get("atr_factor", 0.035)))
+
+            # 🧠 30M 資金掃貨方向力道全自動精算
+            dir_30m = 0.0
+            if is_market_open:
+                try:
+                    df_dir = yf.download(sym, period="3d", interval="15m", progress=False, session=session, threads=False, timeout=3)
+                    if not df_dir.empty and len(df_dir) >= 2:
+                        last_2_closes = df_dir['Close'].tail(2).values.flatten()
+                        last_2_opens = df_dir['Open'].tail(2).values.flatten()
+                        
+                        k1_force = (last_2_closes[-1] - last_2_opens[-1]) / last_2_opens[-1]
+                        k2_force = (last_2_closes[-2] - last_2_opens[-2]) / last_2_opens[-2]
+                        
+                        dir_30m = float(k1_force + k2_force) * 100.0
+                        dir_30m = max(min(dir_30m, 1.0), -1.0)
+                except Exception as e:
+                    dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.05)))
+            else:
+                dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.02)))
+            
+            if dir_30m == 0.05 and is_market_open:
+                dir_30m = random.uniform(-0.06, 0.09)
+                
+        except Exception as e:
+            print(f"❌ 波段雷達讀取 {sym} 底層特徵失敗: {e}")
+            continue
+
+        # 🧠 機器學習演算法：分析過去 30 天歷史跌勢週期 - Part 3 (縮排已同步對齊 8個空格)
 
         # 🧠 機器學習演算法：分析過去 30 天歷史跌勢週期 - Part 3
         learned_fall_days = 7  
