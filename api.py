@@ -910,9 +910,10 @@ def wave_radar_page():
             ai_score = float(res.get("predicted_score", 0.0))
             
             weights_dict = res.get("weights", {})
-            atr_factor = float(weights_dict.get("atr", 0.025))
-            dir_30m = float(weights_dict.get("dir30", 0.0))
-            gap_pre = float(weights_dict.get("gap", 0.0))
+            # 🛡️ 雙重保險：同時讀取兩種變數名，徹底根除讀到 0.0 的凍結 Bug
+            atr_factor = float(weights_dict.get("atr", weights_dict.get("atr_factor", 0.025)))
+            dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.0)))
+            gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
             
         except Exception as e:
             print(f"❌ 波段雷達讀取 {sym} 底層特徵失敗: {e}")
