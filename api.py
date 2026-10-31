@@ -106,12 +106,10 @@ LINE_GROUP_ID = "C1162cbe9ec5fe04c4e64da1c0e19da3e"
 LAST_ALERT_STATES = {}
 
 def send_line_bot_message(text_message: str):
-    """2026年官方帳號 Push Message 修正標準網址版發送引擎"""
     if not LINE_ACCESS_TOKEN or LINE_ACCESS_TOKEN.startswith("您的"):
         return
     
-    # 🛡️ 修正核心：改回 LINE 官方指定的真實 Messaging API 推播網址，確保群組能正常收訊
-    url = "https://line.me"
+    url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
@@ -134,14 +132,15 @@ def send_line_bot_message(text_message: str):
     except Exception as e:
         print(f"❌ [LINE 連線異常]: {e}")
 
+
 # -------------------------------------------------------------------------
-# 📈 預測 API 端點（已整合 2026 LINE 官方機器人即時變盤警報天線）
+# 📈 預測 API 端點（已整合 AI 分數動態縮放規則 + 2026 LINE 變盤天線）
 # -------------------------------------------------------------------------
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
     sym = symbol.upper()
     
-    # 💡 1. 嚴謹紐約時區精算（補齊預測端點內部的開盤狀態判定，防止 NameError）
+    # 💡 1. 嚴謹紐約時區精算
     import pytz
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
@@ -154,19 +153,33 @@ def predict_symbol(symbol: str):
             is_market_open = True
             
     try:
-        # 2. 執行您底層原本的 AI 模型預測
+        # 2. 執行底層原本的 AI 模型預測
         raw_result = run_prediction(symbol=sym, return_dict=True)
         
-        # 3. 🛡️ 核心防死鎖防線：如果是在開盤期間，強行跳過舊快取，100% 採用即時真實分數！
+        # 3. 🛡️ 核心防死鎖防線：如果是在開盤期間，強行跳過舊快取
         if is_market_open:
             cleaned_res = raw_result  
         else:
             cleaned_res = process_prediction_with_cache(sym, raw_result)
         
-        # 4. 提取即時多空核心特徵
-        ai_score = float(cleaned_res.get("predicted_score", 0.0))
-        weights_dict = cleaned_res.get("weights", {})
+        # 🧠【核心規則重塑：AI 動能分數動態歸一化】
+        # 提取原本細微的原始分數 (例如 0.03)
+        raw_ai_score = float(cleaned_res.get("predicted_score", 0.0))
         
+        # 判定縮放基準：既然現在最高落在 0.03 上下，我們以 0.033 作為滿分 1.0 的縮放因子
+        # 如果分數是大於 0 的正向動能，進行等比拉抬放大
+        if raw_ai_score > 0:
+            # 乘以放大權重（1 / 0.033 ≈ 30.3 倍），讓 0.03 順利放大成 0.91
+            ai_score = min(raw_ai_score / 0.033, 1.0)
+        else:
+            # 負向分數維持原有比例或等比放大修正風險
+            ai_score = raw_ai_score * 3.0 
+            
+        # 將放大後的直觀分數回寫到結果字典中，確保前端顯示與策略一致
+        cleaned_res["predicted_score"] = round(ai_score, 3)
+        
+        # 4. 提取即時多空核心特徵
+        weights_dict = cleaned_res.get("weights", {})
         dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.0)))
         gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
         current_price = float(cleaned_res.get("current_price", 0.0))
@@ -176,7 +189,7 @@ def predict_symbol(symbol: str):
         if sym not in LAST_ALERT_STATES:
             LAST_ALERT_STATES[sym] = "NORMAL"
             
-        # 🟢 狀況 A：偵測到盤中即將大漲
+        # 🟢 狀況 A：偵測到盤中即將大漲（經過放大後，0.55 門檻將能被精準觸發！）
         if ai_score >= 0.55 or (dir_30m > 0.25 and gap_pre > 0.003):
             if LAST_ALERT_STATES[sym] != "UP":
                 LAST_ALERT_STATES[sym] = "UP"
@@ -184,7 +197,8 @@ def predict_symbol(symbol: str):
                 msg = (
                     f"🚀【矽谷矩陣・大漲變盤警報】\n"
                     f"● 標的代號: {sym}\n"
-                    f"● 變盤訊號: 主力強勢鎖籌，即將走大漲行情！\n"
+                    f"● 變盤訊號: 主力強勢鎖籌，動能頂天爆發！\n"
+                    f"● 調整後優化動能: {ai_score:.3f} (原創分數: {raw_ai_score:.4f})\n"
                     f"● 當前現價: ${current_price:.2f}\n"
                     f"🎯【操盤對策】: 順勢突破確認。建議追價買進價格為 ${target_buy:.2f}！"
                 )
