@@ -735,11 +735,14 @@ def dashboard(symbol: str):
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp") if result.get("timestamp") else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 🔥 核心修正：從小模型權重字典中動態提取真實盤前跳空幅度，並換算為百分比
+    # 🔥 核心修正：融入非開盤強制歸零防線，徹底擊碎 15% 魔咒
     weights_dict = result.get("weights", {})
     raw_gap = weights_dict.get("gap", weights_dict.get("gap_pre", 0.0))
     try:
-        gap_pre_pct = f"{float(raw_gap) * 100:.2f}%"
+        if is_weekend_now() or (not is_market_open):
+            gap_pre_pct = "0.00%"
+        else:
+            gap_pre_pct = f"{float(raw_gap) * 100:.2f}%"
     except:
         gap_pre_pct = "0.00%"
 
@@ -901,7 +904,7 @@ def home():
 """
     return HTMLResponse(content=html)
 # =========================================================================
-# 🎯 [15% BUG 修復分段版 - Part 1] 獨立波段策略雷達數據端點
+# 🎯 [15% BUG 修復完整分段版 - Part 1] 獨立波段策略雷達數據端點
 # =========================================================================
 @app.get("/wave_radar", response_class=HTMLResponse)
 def wave_radar_page():
@@ -934,13 +937,16 @@ def wave_radar_page():
             current_price = float(res.get("current_price", 100.0))
             ai_score = float(res.get("predicted_score", 0.0))
             
-            # 🛡️ 核心修正：每一次迴圈重新清洗 gap_pre，週末無盤前數據時強制歸零 0.0
+            # 🛡️ 智慧終極防線：每一次迴圈重新清洗 gap_pre，只要是週末或休市，一律強制歸零！
             weights_dict = res.get("weights", {})
             raw_gap = weights_dict.get("gap", weights_dict.get("gap_pre", 0.0))
             try:
-                gap_pre = float(raw_gap)
-                if gap_pre > 1.0 or gap_pre < -1.0:
+                if is_weekend_now() or (not is_market_open):
                     gap_pre = 0.0
+                else:
+                    gap_pre = float(raw_gap)
+                    if gap_pre > 1.0 or gap_pre < -1.0:
+                        gap_pre = 0.0
             except:
                 gap_pre = 0.0
             
