@@ -1036,7 +1036,7 @@ def wave_radar_page():
             else:
                 timing_date = "🗓️ 靜待方向突破，美股開盤後將自動更新動能天線"
 
-        # HTML 卡片組裝與變數注入 - Part 7
+        # HTML 卡片組裝與變數注入 - Part 7（已調整黃金排隊順序與加上 Gap）
         wave_cards_html += f"""
         <div class="wave-card" style="border-top: 5px solid {card_border};">
             <div class="card-header">
@@ -1047,8 +1047,9 @@ def wave_radar_page():
             <div class="card-body">
                 <div class="metric-box">
                     <p>💡 AI 綜合動能分數：<span style="color:#60a5fa; font-weight:bold;">{ai_score:.3f}</span></p>
-                    <p>📊 歷史 14D 震盪波幅 (ATR)：<span style="color:#34d399; font-weight:bold;">{atr_factor*100:.2f}%</span></p>
+                    <p>📈 盤前跳空幅度 (Gap)：<span style="color:#fbbf24; font-weight:bold;">{gap_pre * 100:.2f}%</span></p>
                     <p>⏱️ 30M 資金掃貨方向力道：<span style="color:#a78bfa; font-weight:bold;">{dir_30m:.2f}</span></p>
+                    <p>📊 歷史 14D 震盪波幅 (ATR)：<span style="color:#34d399; font-weight:bold;">{atr_factor*100:.2f}%</span></p>
                 </div>
                 <div class="strategy-box">
                     <div class="strat-title">🎯 戰略擇時與操作指引</div>
