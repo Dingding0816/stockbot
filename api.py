@@ -709,7 +709,7 @@ def quant_matrix_page():
     return HTMLResponse(content=final_html)
 
 # =========================================================================
-# 📊 [第三段 - 3A] 滿血復活：個股 Dashboard 路由後端邏輯與數據解析 (作用域修正版)
+# 📊 [個股 Dashboard 路由] - 滿血整合盤前跳空幅度 (Gap) 卡片版
 # =========================================================================
 @app.get("/dashboard/{symbol}", response_class=HTMLResponse)
 def dashboard(symbol: str):
@@ -735,6 +735,14 @@ def dashboard(symbol: str):
     actual = r(result.get("actual_result"))
     ts = result.get("timestamp") if result.get("timestamp") else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # 🔥 核心修正：從小模型權重字典中動態提取真實盤前跳空幅度，並換算為百分比
+    weights_dict = result.get("weights", {})
+    raw_gap = weights_dict.get("gap", weights_dict.get("gap_pre", 0.0))
+    try:
+        gap_pre_pct = f"{float(raw_gap) * 100:.2f}%"
+    except:
+        gap_pre_pct = "0.00%"
+
     beta_text = "N/A"
     if "beta_cached" in PREDICTION_CACHE.get(sym, {}):
         beta_text = PREDICTION_CACHE[sym]["beta_cached"]
@@ -754,11 +762,6 @@ def dashboard(symbol: str):
         trend_percent = max(min(val * 100 + 50, 100), 0)
     except: trend_percent = 50
 
-    try:
-        act_val = float(actual) if (actual is not None and actual != "--") else 0
-        heat_alpha = min(abs(act_val) * 5, 0.8)
-    except: heat_alpha = 0
-
     from config.loader import load_stock_config
     try:
         stock_config = load_stock_config()
@@ -770,9 +773,24 @@ def dashboard(symbol: str):
         links_html += f'<a href="/dashboard/{s}" style="margin-right:12px;color:#93c5fd;text-decoration:none;font-weight:bold;font-size:1.1rem;">{s}</a>\n'
 
 # =========================================================================
-# 📊 [第三段 - 3B] 個股 Dashboard 網頁 UI 結構與變數替換
+# 📊 個股 Dashboard 網頁 UI 結構（已融入 9 宮格黃色發光 Gap 卡片）
 # =========================================================================
-    raw_dashboard_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>{sym} Prediction Dashboard</title><style>body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }} .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }} .container {{ max-width: 960px; margin: 0 auto; padding: 20px; }} .countdown {{ font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }} .title {{ font-size: 2rem; font-weight: 700; margin-bottom: 6px; }} .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }} .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }} .card {{ border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }} .card:hover {{ transform: scale(1.03); }} .card-title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }} .card-value {{ font-size: 1.6rem; font-weight: 600; }} .trend-bar {{ height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 {trend_percent}%, #4caf50 {trend_percent}%); }} .footer {{ margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }} .card-group-1 {{ background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); }} .card-group-2 {{ background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); }} .card-group-3 {{ background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); }} .card-group-4 {{ background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); }}</style></head><body><div class="container"><img src="/volume_chart/{sym}" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Chart"><a class="home-btn" href="/">🏠 回主頁</a><div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">{links_html}</div><div class="title">{sym} Prediction Dashboard</div><div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div><div class="grid"><div class="card card-group-1"><div class="card-title">Currently Price</div><div class="card-value" id="price">{current_price}</div><div class="trend-bar"></div></div><div class="card card-group-1"><div class="card-title">Beta Coefficient</div><div class="card-value">{beta_text}</div></div><div class="card card-group-2"><div class="card-title">5M Best Buy</div><div class="card-value">{best_buy_5m}</div></div><div class="card card-group-2"><div class="card-title">5M Best Sell</div><div class="card-value">{best_sell_5m}</div></div><div class="card card-group-3"><div class="card-title">15M Est High</div><div class="card-value">{est_high15}</div></div><div class="card card-group-3"><div class="card-title">15M Est Low</div><div class="card-value">{est_low15}</div></div><div class="card card-group-4"><div class="card-title">Full Day Est High</div><div class="card-value">{est_high_full_day}</div></div><div class="card card-group-4"><div class="card-title">Full Day Est Low</div><div class="card-value">{est_low_full_day}</div></div></div><div class="footer">更新時間：{ts}</div></div><script>let sec = 60; setInterval(() => {{ sec--; if (sec <= 0) sec = 60; document.getElementById('count').innerText = sec; }}, 1000); async function refreshPrice() {{ try {{ let res = await fetch("/predict/{sym}"); if (!res.ok) return; let data = await res.json(); if(data.current_price) {{ document.getElementById("price").innerText = Number(data.current_price).toFixed(1); }} }} catch (e) {{ }} }} setInterval(refreshPrice, 5000);</script></body></html>"""
+    raw_dashboard_html = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>{sym} Prediction Dashboard</title><style>body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #0b1120; color: #e5e7eb; }} .home-btn {{ display: inline-block; padding: 10px 18px; background: #1f2937; color: #93c5fd; border-radius: 8px; text-decoration: none; margin-bottom: 16px; border: 1px solid #374151; }} .container {{ max-width: 960px; margin: 0 auto; padding: 20px; }} .countdown {{ font-size: 1rem; color: #93c5fd; margin-bottom: 10px; }} .title {{ font-size: 2rem; font-weight: 700; margin-bottom: 6px; }} .subtitle {{ font-size: 1rem; color: #9ca3af; margin-bottom: 20px; }} .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }} .card {{ border-radius: 14px; padding: 18px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.45); border: 1px solid #1f2937; transition: transform 0.2s ease; }} .card:hover {{ transform: scale(1.03); }} .card-title {{ font-size: 1rem; color: #9ca3af; margin-bottom: 8px; }} .card-value {{ font-size: 1.6rem; font-weight: 600; }} .trend-bar {{ height: 8px; border-radius: 4px; margin-top: 10px; background: linear-gradient(90deg, #f44336 {trend_percent}%, #4caf50 {trend_percent}%); }} .footer {{ margin-top: 22px; font-size: 0.9rem; color: #6b7280; text-align: right; }} .card-group-1 {{ background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(59, 130, 246, 0.25)); }} .card-group-2 {{ background: linear-gradient(135deg, rgba(52, 211, 153, 0.45), rgba(16, 185, 129, 0.25)); }} .card-group-3 {{ background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(139, 92, 246, 0.25)); }} .card-group-4 {{ background: linear-gradient(135deg, rgba(251, 146, 60, 0.45), rgba(245, 158, 11, 0.25)); }}</style></head><body><div class="container"><img src="/volume_chart/{sym}" style="width:100%; margin-bottom:20px; border-radius:12px;" alt="Chart"><a class="home-btn" href="/">🏠 回主頁</a><div style="margin-bottom:20px; background: rgba(31, 41, 55, 0.4); padding: 12px; border-radius: 8px; border: 1px solid #1f2937;">{links_html}</div><div class="title">{sym} Prediction Dashboard</div><div class="countdown">距離下一次更新：<span id="count">60</span> 秒</div>
+    <div class="grid">
+        <div class="card card-group-1"><div class="card-title">Currently Price</div><div class="card-value" id="price">{current_price}</div><div class="trend-bar"></div></div>
+        <div class="card card-group-1"><div class="card-title">Beta Coefficient</div><div class="card-value">{beta_text}</div></div>
+        
+        <!-- 🎯 新增的隱藏核心數據：獨立黃色發光盤前跳空卡片 -->
+        <div class="card card-group-4"><div class="card-title">Pre-Market Gap (盤前跳空)</div><div class="card-value" style="color: #fbbf24;">{gap_pre_pct}</div></div>
+        
+        <div class="card card-group-2"><div class="card-title">5M Best Buy</div><div class="card-value">{best_buy_5m}</div></div>
+        <div class="card card-group-2"><div class="card-title">5M Best Sell</div><div class="card-value">{best_sell_5m}</div></div>
+        <div class="card card-group-3"><div class="card-title">15M Est High</div><div class="card-value">{est_high15}</div></div>
+        <div class="card card-group-3"><div class="card-title">15M Est Low</div><div class="card-value">{est_low15}</div></div>
+        <div class="card card-group-4"><div class="card-title">Full Day Est High</div><div class="card-value">{est_high_full_day}</div></div>
+        <div class="card card-group-4"><div class="card-title">Full Day Est Low</div><div class="card-value">{est_low_full_day}</div></div>
+    </div>
+    <div class="footer">更新時間：{ts}</div></div><script>let sec = 60; setInterval(() => {{ sec--; if (sec <= 0) sec = 60; document.getElementById('count').innerText = sec; }}, 1000); async function refreshPrice() {{ try {{ let res = await fetch("/predict/{sym}"); if (!res.ok) return; let data = await res.json(); if(data.current_price) {{ document.getElementById("price").innerText = Number(data.current_price).toFixed(1); }} }} catch (e) {{ }} }} setInterval(refreshPrice, 5000);</script></body></html>"""
     return HTMLResponse(content=raw_dashboard_html)
 
 # =========================================================================
@@ -883,14 +901,14 @@ def home():
 """
     return HTMLResponse(content=html)
 # =========================================================================
-# 🎯 [終極縮排校正版] 獨立波段策略雷達路由 (/wave_radar) - 100% 根除 IndentationError
+# 🎯 [15% BUG 修復分段版 - Part 1] 獨立波段策略雷達數據端點
 # =========================================================================
 @app.get("/wave_radar", response_class=HTMLResponse)
 def wave_radar_page():
     from config.loader import load_stock_config
     import pytz
     
-    # 💡 1. 嚴謹紐約時區精算（精準對齊美股夏令 21:30 開盤時間）
+    # 💡 1. 嚴謹紐約時區精算
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     is_market_open = False
@@ -909,7 +927,6 @@ def wave_radar_page():
     today_dt = datetime.now(pytz.timezone("Asia/Taipei"))
     wave_cards_html = ""
 
-    # 🛡️ 縮排修正核心：此行前面已經精準調整為「4個空格」，完美對齊 try!
     for sym in stock_config.keys():
         sym = sym.upper()
         try:
@@ -917,8 +934,15 @@ def wave_radar_page():
             current_price = float(res.get("current_price", 100.0))
             ai_score = float(res.get("predicted_score", 0.0))
             
+            # 🛡️ 核心修正：每一次迴圈重新清洗 gap_pre，週末無盤前數據時強制歸零 0.0
             weights_dict = res.get("weights", {})
-            gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
+            raw_gap = weights_dict.get("gap", weights_dict.get("gap_pre", 0.0))
+            try:
+                gap_pre = float(raw_gap)
+                if gap_pre > 1.0 or gap_pre < -1.0:
+                    gap_pre = 0.0
+            except:
+                gap_pre = 0.0
             
             # 🧠 14D ATR 歷史震盪波幅全自動代打精算
             atr_factor = 0.025  
@@ -962,9 +986,7 @@ def wave_radar_page():
             print(f"❌ 波段雷達讀取 {sym} 底層特徵失敗: {e}")
             continue
 
-        # 🧠 機器學習演算法：分析過去 30 天歷史跌勢週期 - Part 3 (縮排已同步對齊 8個空格)
-
-        # 🧠 機器學習演算法：分析過去 30 天歷史跌勢週期 - Part 3
+        # 🧠 機器學習演算法：分析過去 30 天歷史跌勢週期
         learned_fall_days = 7  
         try:
             hist_study = yf.download(sym, period="45d", interval="1d", progress=False, session=session, threads=False, timeout=3)
@@ -983,7 +1005,6 @@ def wave_radar_page():
                 if current_run > 0:
                     fall_sequences.append(current_run)
 
-                # 統計波段跌勢並加入 2 天洗盤期 - Part 4
                 if len(fall_sequences) > 0:
                     avg_fall_run = float(np.mean(fall_sequences))
                     learned_fall_days = int(math.ceil(avg_fall_run)) + 2  
@@ -1000,25 +1021,22 @@ def wave_radar_page():
         card_border = "#374151"
         if atr_factor <= 0: atr_factor = 0.025
 
-        # 🟢 情境一：推算大漲行情 (美股標準亮綠多頭突破) - Part 5
+        # 🟢 情境一：推算大漲行情
         if ai_score >= 0.62 or (dir_30m > 0.3 and gap_pre > 0.005):
             status_badge = "🚀 即將/已啟動大漲波段 (多頭強勢突破)"
             badge_color = "#22c55e" 
             card_border = "#10b981" 
-            
             target_price = current_price * (1.0 + (atr_factor * 0.6))
             action_text = f"目前主力資金強勢鎖籌。<strong>建議追價買進價為 ${target_price:.2f}</strong>（突破前高確認點），順勢動能操作為主。"
             timing_date = "🔥 現正處於噴發窗口期 (隨時發動)"
 
-        # 🔴 情境二：大跌防禦 ＆ 🟡 情境三：常態蓄勢盤整保護牆 - Part 6
+        # 🔴 情境二：大跌防禦
         elif ai_score <= -0.20 or (dir_30m < -0.3 and is_market_open):
             status_badge = "🚨 警惕即將大跌/主力倒貨"
             badge_color = "#f87171" 
             card_border = "#ef4444" 
-            
             target_price = current_price * (1.0 - (atr_factor * 2.5))
             action_text = f"高位籌碼鬆動。目前絕不可盲目抄底！建議靜待市場恐慌賣壓宣洩完畢，<strong>黃金防禦建議買點為 ${target_price:.2f}</strong>（恐慌盤築底區）。"
-            
             est_date = datetime.now() + timedelta(days=learned_fall_days)
             if est_date.weekday() == 5: est_date += timedelta(days=2)
             elif est_date.weekday() == 6: est_date += timedelta(days=1)
@@ -1030,13 +1048,12 @@ def wave_radar_page():
             card_border = "#f59e0b" 
             target_price = current_price * (1.0 - (atr_factor * 1.0))
             action_text = f"目前量價結構沉悶，資金缺乏共識。建議維持網格交易，<strong>低吸潛伏買點設定在 ${target_price:.2f}</strong>。"
-            # 🎯 修正點：如果是開盤中，顯示實時盤整；非開盤才顯示等待開盤
             if is_market_open:
                 timing_date = "🗓️ 盤中多空拉鋸，靜待方向突破變盤"
             else:
                 timing_date = "🗓️ 靜待方向突破，美股開盤後將自動更新動能天線"
 
-        # HTML 卡片組裝與變數注入 - Part 7（已調整黃金排隊順序與加上 Gap）
+        # HTML 卡片組裝與變數注入 - Part 7（緊接在第一段後方）
         wave_cards_html += f"""
         <div class="wave-card" style="border-top: 5px solid {card_border};">
             <div class="card-header">
@@ -1060,7 +1077,6 @@ def wave_radar_page():
         </div>
         """
 
-    # 輸出極致科技感的暗黑雷達網頁架構與 CSS - Part 8
     html_layout = f"""<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>波段戰略核心雷達</title>
     <style>
         body {{ margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: #070a13; color: #e5e7eb; }} 
@@ -1537,3 +1553,7 @@ async def line_webhook_callback(request: FastAPIRequest): # 已正確綁定全�
     except Exception as e:
         print(f"❌ Webhook 解析失敗，已自動攔截異常: {e}")
         return {"status": "error"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
