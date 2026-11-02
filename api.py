@@ -101,7 +101,7 @@ def is_weekend_now() -> bool:
 # 📟 [2026年最新標準：LINE MESSAGING API 官方機器人發送引擎] 
 # =========================================================================
 LINE_ACCESS_TOKEN = "VK2OUm7lcUnjgIhnLElhzimTFuUOyWQ80XaaNVDpDPLOkbTtWxN9wjos8qcSQq9u64BNAY3ktCy4KvdoXZoMHPZUXAOeHLhkDMhOyw+kehYL4G7J7ALBeoi8DOsUL2seKahQttVSupNgeORM28AtXwdB04t89/1O/w1cDnyilFU="
-LINE_GROUP_ID = "C1162cbe9ec5fe04c4e64da1c0e19da3e"
+LINE_GROUP_ID = "C1162cbe6ec5fe84c4e64da1c0e19da3e"
 
 LAST_ALERT_STATES = {}
 
