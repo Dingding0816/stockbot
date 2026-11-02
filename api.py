@@ -172,119 +172,125 @@ def send_line_bot_message(text_message: str):
         print(f"❌ [LINE 連線異常]: {e}")
 
 
-# -------------------------------------------------------------------------
-# 📈 預測 API 端點（已整合 AI 分數動態縮放規則 + 2026 LINE 變盤天線）
-# -------------------------------------------------------------------------
+# =========================================================================
+# 🛡️ [終極實體硬碟鎖版] 標的即時多空預測與 LINE 秒級警報端端點
+# =========================================================================
+import json
+import os
+
+# 定義實體鎖檔案路徑
+STATE_FILE = "alert_states.json"
+
+def get_file_state(sym):
+    """從硬碟讀取特定股票目前的真實狀態"""
+    if not os.path.exists(STATE_FILE):
+        return "NORMAL"
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get(sym, "NORMAL")
+    except:
+        return "NORMAL"
+
+def set_file_state(sym, state):
+    """將特定股票的全新狀態死死寫入硬碟，防止任何平行時空抹除"""
+    data = {}
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except:
+            data = {}
+    data[sym] = state
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"❌ [硬碟鎖寫入失敗]: {e}")
+
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
-    global LAST_ALERT_STATES  # 🔥 強制宣告：鎖定全域字典，防止被背景循環呼叫時當作局部變數洗空！
     sym = symbol.upper()
     
-    # 💡 1. 嚴謹紐約時區精算
-    import pytz
-    est = pytz.timezone('US/Eastern')
-    now_est = datetime.now(est)
-    is_market_open = False
+    # 1. 暴力跳過任何休市快取，強迫呼叫底層模型預測拿即時真實數據
+    res = run_prediction(symbol=sym, return_dict=True)
+    current_price = float(res.get("current_price", 100.0))
     
-    if now_est.weekday() < 5:
-        start_trade = now_est.replace(hour=9, minute=30, second=0, microsecond=0)
-        end_trade = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
-        if start_trade <= now_est <= end_trade:
-            is_market_open = True
+    # 🧠 AI 動能分數動態縮放放大（根除分數過低）
+    raw_ai_score = float(res.get("predicted_score", 0.0))
+    if raw_ai_score > 0:
+        ai_score = min(raw_ai_score / 0.033, 1.0)
+    else:
+        ai_score = raw_ai_score * 3.0
+    
+    # 2. 提取即時多空核心特徵
+    weights_dict = res.get("weights", {})
+    dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.0)))
+    gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
+    atr_factor = float(weights_dict.get("atr", weights_dict.get("atr_factor", 0.025)))
+    if atr_factor <= 0: atr_factor = 0.025
+    
+    # 🧠 智慧時段判定：如果 gap 判定為 0.0（或剛好卡在保底15%），代表目前已進入開盤交易盤中
+    is_live_trading = False
+    if abs(gap_pre - 0.15) < 0.002 or gap_pre == 0.0:
+        is_live_trading = True
+
+    # 🚀 智慧分流大漲條件
+    is_up_triggered = False
+    if ai_score >= 0.55:
+        is_up_triggered = True
+    elif not is_live_trading and (dir_30m > 0.25 and gap_pre > 0.003):
+        is_up_triggered = True
+    elif is_live_trading and dir_30m > 0.45:
+        is_live_trading_up = True
+        is_up_triggered = True
+
+    # 🚨 智慧分流大跌條件
+    is_down_triggered = False
+    if ai_score <= -0.15 or dir_30m < -0.25:
+        is_down_triggered = True
+
+    # 🔒 【終極硬碟防禦】：從實體檔案中讀取歷史狀態記憶
+    current_saved_state = get_file_state(sym)
+
+    # 🟢 狀況 A：滿足大漲條件
+    if is_up_triggered:
+        if current_saved_state != "UP":
+            # 🛡️ 實體硬碟上鎖！立刻寫入硬碟，就算別的線程下一秒掃到，讀檔案看到 "UP" 也會立刻閉嘴！
+            set_file_state(sym, "UP")
+            target_buy = current_price * (1.0 + (atr_factor * 0.6))
+            msg = (
+                f"🚀【矽谷矩陣・大漲變盤警報】\n"
+                f"● 標的代號: {sym}\n"
+                f"● 變盤訊號: 主力資金瘋狂追價，多頭動能大爆發！\n"
+                f"● 優化綜合動能: {ai_score:.3f}\n"
+                f"● 30M 資金掃貨力道: {dir_30m:.2f}\n"
+                f"● 當前現價: ${current_price:.2f}\n"
+                f"🎯【操盤對策】: 順勢突破確認。建議條件單追買價格為 ${target_buy:.2f}！"
+            )
+            send_line_bot_message(msg)
             
-    try:
-        # 2. 執行底層原本的 AI 模型預測
-        raw_result = run_prediction(symbol=sym, return_dict=True)
-        
-        # 3. 🛡️ 核心防死鎖防線：如果是在開盤期間，強行跳過舊快取
-        if is_market_open:
-            cleaned_res = raw_result  
-        else:
-            cleaned_res = process_prediction_with_cache(sym, raw_result)
-        
-        # 🧠【核心規則重塑：AI 動能分數動態歸一化】
-        # 提取原本細微的原始分數 (例如 0.03)
-        raw_ai_score = float(cleaned_res.get("predicted_score", 0.0))
-        
-        # 判定縮放基準：既然現在最高落在 0.03 上下，我們以 0.033 作為滿分 1.0 的縮放因子
-        # 如果分數是大於 0 的正向動能，進行等比拉抬放大
-        if raw_ai_score > 0:
-            # 乘以放大權重（1 / 0.033 ≈ 30.3 倍），讓 0.03 順利放大成 0.91
-            ai_score = min(raw_ai_score / 0.033, 1.0)
-        else:
-            # 負向分數維持原有比例或等比放大修正風險
-            ai_score = raw_ai_score * 3.0 
+    # 🔴 狀況 B：滿足大跌條件
+    elif is_down_triggered:
+        if current_saved_state != "DOWN":
+            # 🛡️ 實體硬碟上鎖！
+            set_file_state(sym, "DOWN")
+            panic_buy = current_price * (1.0 - (atr_factor * 2.5))
+            msg = (
+                f"🚨【矽谷矩陣・大跌風險警報】\n"
+                f"● 標的代號: {sym}\n"
+                f"● 變盤訊號: 高位籌碼鬆動，走勢嚴重失血！\n"
+                f"● 當前現價: ${current_price:.2f}\n"
+                f"🎯【操盤對策】: 嚴禁左側接飛刀！當前計算之黃金防禦建議抄底買點為 ${panic_buy:.2f}。"
+            )
+            send_line_bot_message(msg)
             
-        # 將放大後的直觀分數回寫到結果字典中，確保前端顯示與策略一致
-        cleaned_res["predicted_score"] = round(ai_score, 3)
-        
-        # 4. 提取即時多空核心特徵
-        weights_dict = cleaned_res.get("weights", {})
-        dir_30m = float(weights_dict.get("dir30", weights_dict.get("direction_30m", 0.0)))
-        gap_pre = float(weights_dict.get("gap", weights_dict.get("gap_pre", 0.0)))
-        current_price = float(cleaned_res.get("current_price", 0.0))
-        atr_factor = float(weights_dict.get("atr", weights_dict.get("atr_factor", 0.025)))
-        if atr_factor <= 0: atr_factor = 0.025
-        
-        if sym not in LAST_ALERT_STATES:
-            LAST_ALERT_STATES[sym] = "NORMAL"
+    # 🟡 狀況 C：回到正常區間，洗牌解鎖
+    else:
+        if current_saved_state != "NORMAL":
+            set_file_state(sym, "NORMAL")
             
-        # 🧠 智慧時段判定：如果網頁端清洗機制已將 gap 判定為 0.0（或剛好卡在保底15%），代表目前已進入開盤交易盤中
-        is_live_trading = False
-        if abs(gap_pre - 0.15) < 0.002 or gap_pre == 0.0:
-            is_live_trading = True
-
-        # 🚀 智慧分流大漲條件
-        is_up_triggered = False
-        if ai_score >= 0.55:
-            is_up_triggered = True
-        elif not is_live_trading and (dir_30m > 0.25 and gap_pre > 0.003):
-            # 盤前時段：看資金與跳空雙強突破
-            is_up_triggered = True
-        elif is_live_trading and dir_30m > 0.45:
-            # 盤中交易時段：自動解除跳空限制，改看主力強勢高位掃貨力道！
-            is_up_triggered = True
-
-        # 🚨 智慧分流大跌條件
-        is_down_triggered = False
-        if ai_score <= -0.15 or dir_30m < -0.25:
-            is_down_triggered = True
-
-        # 🟢 狀況 A：觸發大漲變盤警報
-        if is_up_triggered:
-            if LAST_ALERT_STATES[sym] != "UP":
-                LAST_ALERT_STATES[sym] = "UP"
-                target_buy = current_price * (1.0 + (atr_factor * 0.6))
-                msg = (
-                    f"🚀【矽谷矩陣・大漲變盤警報】\n"
-                    f"● 標的代號: {sym}\n"
-                    f"● 變盤訊號: 主力資金瘋狂追價，多頭動能大爆發！\n"
-                    f"● 優化綜合動能: {ai_score:.3f}\n"
-                    f"● 30M 資金掃貨力道: {dir_30m:.2f}\n"
-                    f"● 當前現價: ${current_price:.2f}\n"
-                    f"🎯【操盤對策】: 順勢突破確認。建議條件單追買價格為 ${target_buy:.2f}！"
-                )
-                send_line_bot_message(msg)
-                
-        # 🔴 狀況 B：觸發大跌風險警報
-        elif is_down_triggered:
-            if LAST_ALERT_STATES[sym] != "DOWN":
-                LAST_ALERT_STATES[sym] = "DOWN"
-                panic_buy = current_price * (1.0 - (atr_factor * 2.5))
-                msg = (
-                    f"🚨【矽谷矩陣・大跌風險警報】\n"
-                    f"● 標的代號: {sym}\n"
-                    f"● 變盤訊號: 高位籌碼鬆動，走勢嚴重失血！\n"
-                    f"● 當前現價: ${current_price:.2f}\n"
-                    f"🎯【操盤對策】: 嚴禁左側接飛刀！當前計算之黃金防禦建議抄底買點為 ${panic_buy:.2f}。"
-                )
-                send_line_bot_message(msg)
-                
-        else:
-            if LAST_ALERT_STATES[sym] != "NORMAL":
-                LAST_ALERT_STATES[sym] = "NORMAL"
-
-        return cleaned_res
+    return res
         
     except Exception as e:
         print(f"❌ 預測端點警報精算異常: {e}")
