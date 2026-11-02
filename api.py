@@ -242,7 +242,6 @@ def predict_symbol(symbol: str):
     elif not is_live_trading and (dir_30m > 0.25 and gap_pre > 0.003):
         is_up_triggered = True
     elif is_live_trading and dir_30m > 0.45:
-        is_live_trading_up = True
         is_up_triggered = True
 
     # 🚨 智慧分流大跌條件
