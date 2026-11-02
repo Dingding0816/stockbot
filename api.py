@@ -230,7 +230,7 @@ def predict_symbol(symbol: str):
     atr_factor = float(weights_dict.get("atr", weights_dict.get("atr_factor", 0.025)))
     if atr_factor <= 0: atr_factor = 0.025
     
-    # 🧠 智慧時段判定：如果 gap 判定為 0.0（或剛好卡在保底15%），代表目前已進入開盤交易盤中
+    # 🧠 智慧時段判定
     is_live_trading = False
     if abs(gap_pre - 0.15) < 0.002 or gap_pre == 0.0:
         is_live_trading = True
@@ -255,7 +255,6 @@ def predict_symbol(symbol: str):
     # 🟢 狀況 A：滿足大漲條件
     if is_up_triggered:
         if current_saved_state != "UP":
-            # 🛡️ 實體硬碟上鎖！立刻寫入硬碟，就算別的線程下一秒掃到，讀檔案看到 "UP" 也會立刻閉嘴！
             set_file_state(sym, "UP")
             target_buy = current_price * (1.0 + (atr_factor * 0.6))
             msg = (
@@ -272,7 +271,6 @@ def predict_symbol(symbol: str):
     # 🔴 狀況 B：滿足大跌條件
     elif is_down_triggered:
         if current_saved_state != "DOWN":
-            # 🛡️ 實體硬碟上鎖！
             set_file_state(sym, "DOWN")
             panic_buy = current_price * (1.0 - (atr_factor * 2.5))
             msg = (
