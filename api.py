@@ -288,12 +288,6 @@ def predict_symbol(symbol: str):
             set_file_state(sym, "NORMAL")
             
     return res
-        
-    except Exception as e:
-        print(f"❌ 預測端點警報精算異常: {e}")
-        if sym in PREDICTION_CACHE and PREDICTION_CACHE[sym]:
-            return PREDICTION_CACHE[sym]
-        raise HTTPException(status_code=500, detail="無法取得預測數據且無歷史快取")
 
 # =========================================================================
 # 📊 [第二段 - 2A] 原本的動態成交量與收盤價圖表產生器 (NumPy 安全解鎖版)
