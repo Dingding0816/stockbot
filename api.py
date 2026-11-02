@@ -62,6 +62,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =========================================================================
+# ⏰ [全自動盯盤引擎接通開關] 伺服器啟動時，強制在背景啟動無限循環掃描
+# =========================================================================
+import asyncio
+
+async def auto_scan_market_loop():
+    """每 60 秒自動讀取 stock.yaml 並觸發全市場 predict 警報推播"""
+    from config.loader import load_stock_config
+    print("🚀 [全自動盯盤中樞] 背景全自動無限掃描引擎已成功上線！")
+    
+    # 讓伺服器啟動完成 5 秒後再跑第一次，防止開機撞車
+    await asyncio.sleep(5) 
+    
+    while True:
+        try:
+            stock_config = load_stock_config()
+            symbols = list(stock_config.keys())
+            print(f"🔄 [背景自動掃描中] 目前偵測到清單標的：{symbols}")
+            
+            for sym in symbols:
+                sym = sym.upper()
+                try:
+                    predict_symbol(symbol=sym)
+                except Exception as e:
+                    print(f"⚠️ 背景掃描 {sym} 發生輕微異常: {e}")
+                # 每跑一隻股票稍微休息 1 秒，防止被 Yahoo 或 LINE 官方黑名單
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            print(f"❌ 全自動盯盤引擎執行異常: {e}")
+            
+        print("⏳ [掃貨完畢] 盯盤中樞進入 60 秒冷卻，隨後將發動新一輪即時天線精算...")
+        await asyncio.sleep(60)
+
+@app.on_event("startup")
+def start_background_tracker():
+    # 強制將全自動盯盤迴圈註冊進 FastAPI 的背景非同步事件中
+    asyncio.create_task(auto_scan_market_loop())
+
 # -------------------------------------------------------------------------
 # 💾 全域預測歷史快取機制 (預防 NaN 斷訊)
 # -------------------------------------------------------------------------
