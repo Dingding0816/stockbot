@@ -68,7 +68,7 @@ app.add_middleware(
 import asyncio
 
 async def auto_scan_market_loop():
-    """每 60 秒自動讀取 stock.yaml 並觸發全市場 predict 警報推播"""
+    global LAST_ALERT_STATES  # 🔥 強制宣告：背景掃描時，嚴格共享與讀寫同一個主線程狀態記憶體！
     from config.loader import load_stock_config
     print("🚀 [全自動盯盤中樞] 背景全自動無限掃描引擎已成功上線！")
     
@@ -177,6 +177,7 @@ def send_line_bot_message(text_message: str):
 # -------------------------------------------------------------------------
 @app.get("/predict/{symbol}")
 def predict_symbol(symbol: str):
+    global LAST_ALERT_STATES  # 🔥 強制宣告：鎖定全域字典，防止被背景循環呼叫時當作局部變數洗空！
     sym = symbol.upper()
     
     # 💡 1. 嚴謹紐約時區精算
