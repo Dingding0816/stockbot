@@ -189,32 +189,54 @@ def predict_symbol(symbol: str):
         if sym not in LAST_ALERT_STATES:
             LAST_ALERT_STATES[sym] = "NORMAL"
             
-        # 🟢 狀況 A：偵測到盤中即將大漲（經過放大後，0.55 門檻將能被精準觸發！）
-        if ai_score >= 0.55 or (dir_30m > 0.25 and gap_pre > 0.003):
+        # 🧠 智慧時段判定：如果網頁端清洗機制已將 gap 判定為 0.0（或剛好卡在保底15%），代表目前已進入開盤交易盤中
+        is_live_trading = False
+        if abs(gap_pre - 0.15) < 0.002 or gap_pre == 0.0:
+            is_live_trading = True
+
+        # 🚀 智慧分流大漲條件
+        is_up_triggered = False
+        if ai_score >= 0.55:
+            is_up_triggered = True
+        elif not is_live_trading and (dir_30m > 0.25 and gap_pre > 0.003):
+            # 盤前時段：看資金與跳空雙強突破
+            is_up_triggered = True
+        elif is_live_trading and dir_30m > 0.45:
+            # 盤中交易時段：自動解除跳空限制，改看主力強勢高位掃貨力道！
+            is_up_triggered = True
+
+        # 🚨 智慧分流大跌條件
+        is_down_triggered = False
+        if ai_score <= -0.15 or dir_30m < -0.25:
+            is_down_triggered = True
+
+        # 🟢 狀況 A：觸發大漲變盤警報
+        if is_up_triggered:
             if LAST_ALERT_STATES[sym] != "UP":
                 LAST_ALERT_STATES[sym] = "UP"
                 target_buy = current_price * (1.0 + (atr_factor * 0.6))
                 msg = (
                     f"🚀【矽谷矩陣・大漲變盤警報】\n"
                     f"● 標的代號: {sym}\n"
-                    f"● 變盤訊號: 主力強勢鎖籌，動能頂天爆發！\n"
-                    f"● 調整後優化動能: {ai_score:.3f} (原創分數: {raw_ai_score:.4f})\n"
+                    f"● 變盤訊號: 主力資金瘋狂追價，多頭動能大爆發！\n"
+                    f"● 優化綜合動能: {ai_score:.3f}\n"
+                    f"● 30M 資金掃貨力道: {dir_30m:.2f}\n"
                     f"● 當前現價: ${current_price:.2f}\n"
-                    f"🎯【操盤對策】: 順勢突破確認。建議追價買進價格為 ${target_buy:.2f}！"
+                    f"🎯【操盤對策】: 順勢突破確認。建議條件單追買價格為 ${target_buy:.2f}！"
                 )
                 send_line_bot_message(msg)
                 
-        # 🔴 狀況 B：偵測到盤中即將大跌
-        elif ai_score <= -0.15 or (dir_30m < -0.25 and is_market_open):
+        # 🔴 狀況 B：觸發大跌風險警報
+        elif is_down_triggered:
             if LAST_ALERT_STATES[sym] != "DOWN":
                 LAST_ALERT_STATES[sym] = "DOWN"
                 panic_buy = current_price * (1.0 - (atr_factor * 2.5))
                 msg = (
                     f"🚨【矽谷矩陣・大跌風險警報】\n"
                     f"● 標的代號: {sym}\n"
-                    f"● 變盤訊號: 高位籌碼鬆動，即將走大跌行情！\n"
+                    f"● 變盤訊號: 高位籌碼鬆動，走勢嚴重失血！\n"
                     f"● 當前現價: ${current_price:.2f}\n"
-                    f"🎯【操盤對策】: 嚴禁接飛刀！黃金防禦建議抄底買點為 ${panic_buy:.2f}。"
+                    f"🎯【操盤對策】: 嚴禁左側接飛刀！當前計算之黃金防禦建議抄底買點為 ${panic_buy:.2f}。"
                 )
                 send_line_bot_message(msg)
                 
@@ -1006,13 +1028,25 @@ def wave_radar_page():
         card_border = "#374151"
         if atr_factor <= 0: atr_factor = 0.025
 
+        # 🧠 智慧時段判定：用來在前端同步更新戰略擇時文字
+        is_live_trading = (gap_pre == 0.0)
+
+        # 🚀 網頁前端大漲判斷分流對齊
+        is_web_up = False
+        if ai_score >= 0.55:
+            is_web_up = True
+        elif not is_live_trading and (dir_30m > 0.25 and gap_pre > 0.003):
+            is_web_up = True
+        elif is_live_trading and dir_30m > 0.45:
+            is_web_up = True
+
         # 🟢 情境一：推算大漲行情
-        if ai_score >= 0.55 or (dir_30m > 0.25 and gap_pre > 0.003):
+        if is_web_up:
             status_badge = "🚀 即將/已啟動大漲波段 (多頭強勢突破)"
             badge_color = "#22c55e" 
             card_border = "#10b981" 
             target_price = current_price * (1.0 + (atr_factor * 0.6))
-            action_text = f"目前主力資金強勢鎖籌。<strong>建議追價買進價為 ${target_price:.2f}</strong>（突破前前突破確認點），優化後動能：{ai_score:.3f}。"
+            action_text = f"目前主力資金強勢鎖籌。<strong>建議突破追價買進價為 ${target_price:.2f}</strong>，多頭主力強勢攻勢確立。"
             timing_date = "🔥 現正處於噴發窗口期 (隨時發動)"
 
         # 🔴 情境二：大跌防禦
@@ -1021,11 +1055,11 @@ def wave_radar_page():
             badge_color = "#f87171" 
             card_border = "#ef4444" 
             target_price = current_price * (1.0 - (atr_factor * 2.5))
-            action_text = f"高位籌碼鬆動。目前絕不可盲目抄底！建議靜待市場恐慌賣壓宣洩完畢，<strong>黃金防禦建議買點為 ${target_price:.2f}</strong>。"
+            action_text = f"高位籌碼鬆動。目前絕不可盲目抄底！建議靜待市場恐慌賣壓宣洩完畢，<strong>黃金防禦即時浮動建議買點為 ${target_price:.2f}</strong>（隨現價即時動態防守）。"
             est_date = datetime.now() + timedelta(days=learned_fall_days)
             if est_date.weekday() == 5: est_date += timedelta(days=2)
             elif est_date.weekday() == 6: est_date += timedelta(days=1)
-            timing_date = f"⏳ 預估恐慌砸盤築底落點：{est_date.strftime('%Y-%m-%d')} 前後"
+            timing_date = f"⏳ [30D動態精算] 預估恐慌砸盤築底落點：{est_date.strftime('%Y-%m-%d')} 前後"
             
         else:
             status_badge = "⏳ 壓縮蓄勢盤整 (等待方向)"
