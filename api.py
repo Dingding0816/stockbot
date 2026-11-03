@@ -144,33 +144,9 @@ LINE_GROUP_ID = "C1162cbe6ec5fe84c4e64da1c0e19da3e"
 
 LAST_ALERT_STATES = {}
 
-def send_line_bot_message(text_message: str):
-    if not LINE_ACCESS_TOKEN or LINE_ACCESS_TOKEN.startswith("您的"):
-        return
-    
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
-    }
-    payload = {
-        "to": LINE_GROUP_ID,
-        "messages": [
-            {
-                "type": "text",
-                "text": text_message
-            }
-        ]
-    }
-    try:
-        r = requests.post(url, headers=headers, json=payload, timeout=4)
-        if r.status_code == 200:
-            print("📟 [LINE 官方機器人] 變盤通知已秒級推送到您的 LINE 聊天室！")
-        else:
-            print(f"❌ [LINE 發送失敗] 錯誤碼: {r.status_code}, 原因: {r.text}")
-    except Exception as e:
-        print(f"❌ [LINE 連線異常]: {e}")
-
+def send_line_bot_message(message: str):
+    # 🛑 機器人已全面永久封印，絕對不准發送任何一則訊息！
+    return
 
 # =========================================================================
 # 🛡️ [終極實體硬碟鎖版] 標的即時多空預測與 LINE 秒級警報端端點
