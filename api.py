@@ -235,13 +235,13 @@ def predict_symbol(symbol: str):
     if abs(gap_pre - 0.15) < 0.002 or gap_pre == 0.0:
         is_live_trading = True
 
-    # 🚀 智慧分流大漲條件
+    # 🚀 智慧分流大漲條件 (已極端拉高門檻防禦洗版)
     is_up_triggered = False
-    if ai_score >= 0.55:
+    if ai_score >= 0.92:
         is_up_triggered = True
-    elif not is_live_trading and (dir_30m > 0.25 and gap_pre > 0.003):
+    elif not is_live_trading and (dir_30m > 0.45 and gap_pre > 0.01):
         is_up_triggered = True
-    elif is_live_trading and dir_30m > 0.45:
+    elif is_live_trading and dir_30m > 0.85:
         is_up_triggered = True
 
     # 🚨 智慧分流大跌條件
